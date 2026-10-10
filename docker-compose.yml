@@ -1,0 +1,39 @@
+services:
+  argus:
+    build:
+      context: .
+      dockerfile: bots/argus/Dockerfile
+    image: arkhon/argus-bot:latest
+    container_name: argus-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ARGUS_DB_PATH: /app/data/argus.sqlite
+      ARGUS_WEBHOOK_PORT: 8080
+      # Uncomment with the certa-data volume below to mention Certa links in /argus link.
+      # CERTA_DB_PATH: /certa-data/certa.sqlite
+    ports:
+      # Argus POSTs signed events to http://<host>:8080/webhooks/argus. Put TLS in front of it.
+      - "8080:8080"
+    volumes:
+      - argus-data:/app/data
+      # - certa-data:/certa-data:ro
+    # /healthz is served by the webhook server, so the check needs ARGUS_WEBHOOK_SECRET set.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  argus-data:
+  # The Certa bot's data volume, when both bots run on the same Docker host.
+  # certa-data:
+  #   external: true
+  #   name: certa-discord-bot_certa-data

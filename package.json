@@ -1,0 +1,30 @@
+{
+  "name": "arkhon-argus-discord-bot",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b bots/argus",
+    "typecheck": "tsc -b bots/argus packages/shared/tsconfig.test.json bots/argus/tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "argus:dev": "pnpm --filter @arkhon/argus-bot dev",
+    "argus:register": "pnpm --filter @arkhon/argus-bot register",
+    "argus:event": "pnpm --filter @arkhon/argus-bot dev-tool event",
+    "argus:mock-status": "pnpm --filter @arkhon/argus-bot dev-tool status"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "entries": [
+    {
+      "id": "link",
+      "question": "How do I link my Argus account to Discord?",
+      "answer": "In Argus, open **Settings → Discord** and generate a one-time code, then run `/argus link code:<code>` here. Codes are single-use and expire after a few minutes."
+    },
+    {
+      "id": "quote",
+      "question": "How is my job priced?",
+      "answer": "Argus builds an itemized quote from the service, site size, travel distance, turnaround (standard, priority, or rush), image count, and add-ons. You see the full breakdown before you book."
+    },
+    {
+      "id": "pilot",
+      "question": "When will a pilot pick up my job?",
+      "answer": "Verified pilots whose service area covers your site are alerted as soon as payment clears. If nobody accepts within 48 hours, Argus emails you and our team steps in. Track it with `/argus jobs`."
+    },
+    {
+      "id": "deliverables",
+      "question": "Where are my photos, maps, and reports?",
+      "answer": "Deliverables land in your Argus portal when the pilot finishes. The job moves to **Ready for your review**; approve it there to close the job. `/argus job id:<id>` shows what has been uploaded."
+    },
+    {
+      "id": "verify",
+      "question": "What do pilots need to get verified?",
+      "answer": "An FAA Part 107 certificate, liability insurance (annual, or on-demand per flight), a government ID, and drone registration. Upload them in Argus; `/argus credentials` shows review status and expiry dates."
+    },
+    {
+      "id": "accept",
+      "question": "Why can't I accept missions?",
+      "answer": "Missions can be accepted only while all your credentials are approved and current. Higher standing tiers see new missions sooner, so a mission may appear for you a little after it is posted."
+    },
+    {
+      "id": "payouts",
+      "question": "When do pilots get paid?",
+      "answer": "Your payout is released once the client approves the job. Payouts go to your connected Stripe account; eligible balances can also be paid out instantly from Argus. Check `/argus earnings`."
+    },
+    {
+      "id": "airspace",
+      "question": "Does Argus clear airspace for me?",
+      "answer": "No. Argus shows an advisory FAA facility-map ceiling for the site, but the pilot is responsible for LAANC or DroneZone authorization and for flying safely under Part 107."
+    }
+  ]
+}
