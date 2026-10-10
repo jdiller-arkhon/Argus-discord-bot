@@ -10,7 +10,8 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "register": "tsx --env-file-if-exists=../../.env src/register.ts",
     "register:prod": "node dist/register.js",
-    "dev-tool": "tsx --env-file-if-exists=../../.env src/tools/dev.ts"
+    "dev-tool": "tsx --env-file-if-exists=../../.env src/tools/dev.ts",
+    "doctor": "tsx --env-file-if-exists=../../.env src/tools/doctor.ts"
   },
   "dependencies": {
     "@arkhon/shared": "workspace:*",

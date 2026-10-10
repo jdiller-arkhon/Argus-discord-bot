@@ -7,7 +7,7 @@ Argus bot. The Certa bot (`jdiller-arkhon/Certa-discord-bot`) and the Ops bot
 ```
 packages/shared/   @arkhon/shared: helpers used by more than one bot, including the support ticket flow
 bots/argus/        Argus bot: account link, status, event alerts, jobs, missions, payouts, credentials, help
-docs/              Argus product context and the backend contract the bot depends on
+docs/              Argus product context, the backend contract the bot depends on, and deploy.md
 ```
 
 ## Commands
@@ -21,7 +21,9 @@ pnpm argus:dev           # run the bot with tsx watch, reading ../../.env
 pnpm argus:register      # register slash commands without starting the bot
 pnpm argus:event <type> [--discord <id>]   # POST a signed sample event to the running bot
 pnpm argus:mock-status <state> [summary]   # mock mode: change what the status endpoint reports
+pnpm argus:doctor [--public-url <url>]      # check every credential and ID in .env; prints the invite link
 docker compose up -d --build argus
+fly deploy                                  # production (fly.toml); see docs/deploy.md
 ```
 
 Run `pnpm typecheck && pnpm test` before committing.
@@ -148,7 +150,7 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
 - All request and response types are zod schemas in `src/argus/types.ts`. Unknown response keys
   are stripped.
 - `docs/argus-backend-contract.md` is the contract. The platform implements it in
-  `Arkhon-Industries` (`app/api/bot/v1`, `lib/platform/discord-bot/`) on branch `claude/discord-bot-api`.
+  `Arkhon-Industries` (`app/api/bot/v1`, `lib/platform/discord-bot/`), live on `main`.
 
 ### Event alerts
 
@@ -162,7 +164,7 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
   - An event with a `userId` is DMed to the linked owner unless they muted that type. It is never posted to a channel, because it is about their jobs, money, or credentials.
   - A broadcast (`userId: null`) goes to the `ARGUS_EVENT_ROUTES` channel for its type, or is dropped.
 - **Bot settings live on Argus**, not in the bot. Users edit them in the pilot portal (Arkhon
-  website → Discord Bot, `/app/pilot/discord`) and with `/argus alerts`. They are read with
+  website → Pilot Network: `/app/pilot/discord`, and `/app/admin/discord` while the rollout is admins only) and with `/argus alerts`. They are read with
   `ArgusClient.getBotSettings` through `src/settings.ts`, which caches them for 60s and falls back to
   defaults if Argus is unreachable, so alerts keep flowing.
   - `disabledAlerts`: alert types turned off. New types default to on.

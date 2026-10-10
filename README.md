@@ -13,7 +13,7 @@ and follows the same conventions (see `CLAUDE.md`).
   The role is pinged only for degraded or outage.
 - **Event alerts:** a signed `POST /webhooks/argus` endpoint. Personal events are DMed to the linked
   user, and broadcasts go to configured channels.
-- **Bot settings on the Arkhon website:** pilots open **Pilot portal → Discord Bot** to link Discord and
+- **Bot settings on the Arkhon website:** pilots open the **Pilot Network** page to link Discord and
   choose:
   - which DM alerts they get;
   - mission alert filters: minimum payout, maximum distance and services;
@@ -64,7 +64,9 @@ cp .env.example .env   # fill in
 docker compose up -d --build argus
 ```
 
-The container stores its SQLite database in the `argus-data` volume and listens on port 8080 for
+The container starts as root only long enough to give the `node` user its data directory (some
+hosts mount volumes owned by root), then runs as `node`. It stores its SQLite database in the
+`argus-data` volume and listens on port 8080 for
 Argus webhooks. Put TLS in front of it and give Argus `https://<host>/webhooks/argus`. To mention
 Certa links, mount the Certa bot's data volume read-only and set `CERTA_DB_PATH` (commented out in
 `docker-compose.yml`).
@@ -111,23 +113,30 @@ Every variable is documented in `.env.example`. Blank values use the default.
 | `CERTA_DB_PATH` | | Certa bot database, read-only |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
+## Going live
+
+`docs/deploy.md` walks through it end to end: the Discord application, deploying to Fly.io with
+`fly.toml`, the website's Cloudflare settings, and checking each side. `pnpm argus:doctor` checks
+that every credential and ID in `.env` works and prints the invite link.
+
 ## Connecting the real Argus API
 
-The platform serves the bot API from the `Arkhon-Industries` repo (branch `claude/discord-bot-api`).
-`docs/argus-backend-contract.md` lists every endpoint, field, error code and event. To go live:
+The platform serves the bot API from the `Arkhon-Industries` repo (`app/api/bot/v1`, live on
+`main`). `docs/argus-backend-contract.md` lists every endpoint, field, error code and event. The
+database migration is applied. To connect:
 
-1. Apply `drizzle/add-discord-bot.sql` to the platform database, then deploy that branch.
-2. Generate two secrets, for example with `openssl rand -hex 32`. Set them on both sides:
+1. Generate two secrets, for example with `openssl rand -hex 32`. Set them on both sides:
 
    | Platform | Bot |
    | --- | --- |
    | `DISCORD_BOT_API_TOKEN` | `ARGUS_API_TOKEN` |
    | `DISCORD_BOT_WEBHOOK_SECRET` | `ARGUS_WEBHOOK_SECRET` |
 
-3. Set the URLs on each side:
+2. Set the URLs on each side:
    - Platform: `DISCORD_BOT_WEBHOOK_URL=https://<bot host>/webhooks/argus`.
    - Bot: `ARGUS_CLIENT=http` and `ARGUS_API_BASE_URL=https://arkhonindustries.com/api/bot`.
-4. Users link from **Settings → Discord** or **Pilot portal → Discord Bot** on the website.
+3. Users link from **Settings → Arkhon Pilot Network** or the **Pilot Network** page on the website.
+   During the rollout only admins can link (`DISCORD_BOT_ROLES` in the website repo).
 
 ## Development
 

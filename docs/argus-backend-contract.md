@@ -1,16 +1,15 @@
 # What the Argus platform must expose for the bot
 
 The bot talks to Argus only through `ArgusClient` (`bots/argus/src/argus/client.ts`). The platform
-side of this contract is implemented in the `Arkhon-Industries` repo on branch
-`claude/discord-bot-api`:
+side of this contract is implemented in the `Arkhon-Industries` repo, live on `main`:
 
 | Piece | Where |
 | --- | --- |
 | Routes | `app/api/bot/v1/**` |
 | Logic | `lib/platform/discord-bot/` |
 | Website mission rules, shared by the bot | `lib/platform/mission-claim.ts` |
-| Link codes | Settings → Discord |
-| Bot settings dashboard | Pilot portal → Discord Bot (`/app/pilot/discord`) |
+| Link codes | Settings → Arkhon Pilot Network, and the Pilot Network page |
+| Bot settings dashboard | Pilot Network page (`/app/pilot/discord`; `/app/admin/discord` while admins only) |
 | Migration | `drizzle/add-discord-bot.sql`. It's safe to deploy before applying it: Discord reads degrade to "not linked". Apply it to turn the feature on. |
 
 The platform needs these environment variables:
@@ -55,13 +54,13 @@ send these in the first place. Use `locality` ("City, ST") for places.
 Body `{ code, discordUserId }`, response `{ argusUserId, displayName, role }`. `role` is `client`,
 `pilot`, or `admin`, from `user.role`.
 
-**Settings → Discord** (and the pilot portal's Discord Bot page) issues one-time codes. Codes should be single-use,
+**Settings → Discord** (and the Pilot Network page) issues one-time codes. Codes should be single-use,
 expire in about 10 minutes, and be 6–32 characters of `A-Z 0-9 -`. Redeeming stores the
 Discord ID on the user so that events can carry `userId`.
 
 ### `GET /v1/users/:id/settings` and `PUT /v1/users/:id/settings`
 
-The user's bot settings, as one document. Users edit it in the pilot portal (Discord Bot page) and with
+The user's bot settings, as one document. Users edit it in the pilot portal (Pilot Network page) and with
 `/argus alerts`. The bot enforces it when delivering events.
 
 | Field | Values |
@@ -195,7 +194,7 @@ keyed with `ARGUS_WEBHOOK_SECRET`. Sign the exact bytes you send.
 | `credential.expiring` | `kind, expiresAt, daysRemaining` | `credential-expiry` cron ladder |
 | `credential.reviewed` | `kind, status, note` | admin approves or rejects a credential |
 | `dispute.updated` | `disputeId, jobId, status, resolution` | dispute opened or changed; send to client and pilot |
-| `account.test` | `requestedAt` | "Send a test DM" on the pilot portal's Discord Bot page |
+| `account.test` | `requestedAt` | "Send a test DM" on the Pilot Network page |
 | `digest.daily` | `TodaySummary` | the hourly job-alerts sweep, once per local day at the user's chosen hour |
 
 Use `pnpm argus:event <type> --discord <id>` to send correctly signed samples of each type to a

@@ -1,0 +1,51 @@
+# Fly.io deployment for the Argus bot. See docs/deploy.md.
+#
+#   fly launch --copy-config --no-deploy        # once: creates the app from this file
+#   fly volumes create argus_data --size 1      # once: the bot's SQLite database
+#   fly secrets set DISCORD_TOKEN=... ARGUS_API_TOKEN=... ARGUS_WEBHOOK_SECRET=...
+#   fly deploy
+#
+# Argus sends events to https://<app>.fly.dev/webhooks/argus.
+
+app = "arkhon-argus-bot"
+primary_region = "den"
+
+[build]
+  dockerfile = "bots/argus/Dockerfile"
+
+# Settings that are not secret. Discord IDs and the rest of .env.example can go
+# here too, or be set with `fly secrets set`.
+[env]
+  ARGUS_CLIENT = "http"
+  ARGUS_API_BASE_URL = "https://arkhonindustries.com/api/bot"
+  ARGUS_STATUS_URL = "https://arkhonindustries.com/api/health"
+  ARGUS_APP_URL = "https://arkhonindustries.com/app"
+  ARGUS_DB_PATH = "/app/data/argus.sqlite"
+  ARGUS_TIMEZONE = "America/Denver"
+  ARGUS_WEBHOOK_HOST = "0.0.0.0"
+  ARGUS_WEBHOOK_PORT = "8080"
+  LOG_LEVEL = "info"
+
+# SQLite needs a disk that survives deploys. One volume means one machine.
+[[mounts]]
+  source = "argus_data"
+  destination = "/app/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The bot holds a Discord gateway connection, so it must never sleep.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

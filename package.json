@@ -14,7 +14,8 @@
     "argus:dev": "pnpm --filter @arkhon/argus-bot dev",
     "argus:register": "pnpm --filter @arkhon/argus-bot register",
     "argus:event": "pnpm --filter @arkhon/argus-bot dev-tool event",
-    "argus:mock-status": "pnpm --filter @arkhon/argus-bot dev-tool status"
+    "argus:mock-status": "pnpm --filter @arkhon/argus-bot dev-tool status",
+    "argus:doctor": "pnpm --filter @arkhon/argus-bot doctor"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
