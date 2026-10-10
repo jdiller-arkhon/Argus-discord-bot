@@ -11,7 +11,7 @@ side of this contract is implemented in the `Arkhon-Industries` repo on branch
 | Website mission rules, shared by the bot | `lib/platform/mission-claim.ts` |
 | Link codes | Settings → Discord |
 | Bot settings dashboard | Pilot portal → Discord Bot (`/app/pilot/discord`) |
-| Migration | `drizzle/add-discord-bot.sql`. Apply it before merging. |
+| Migration | `drizzle/add-discord-bot.sql`. It's safe to deploy before applying it: Discord reads degrade to "not linked". Apply it to turn the feature on. |
 
 The platform needs these environment variables:
 
@@ -42,6 +42,8 @@ Point the bot's `ARGUS_API_BASE_URL` at `https://arkhonindustries.com/api/bot`. 
 | 400 / 409 / 422 | Refused. `message` is shown, e.g. "Another pilot accepted this mission first." |
 | 5xx | Retried with 500 ms and 1 s backoff, then "Argus is not responding". |
 
+Titles are built at booking as `"<street address> · <service>"`, so the platform passes every title through `botTitle()`, which swaps the address for the locality.
+
 **Never include** street addresses, coordinates, emails, phone numbers, payment details, or
 certificate, policy, or registration numbers. The schemas strip unknown keys, but the API should not
 send these in the first place. Use `locality` ("City, ST") for places.
@@ -65,11 +67,23 @@ The user's bot settings, as one document. Users edit it in the pilot portal (Dis
 | Field | Values |
 | --- | --- |
 | `disabledAlerts` | Personal alert types turned off. Anything not listed is on. |
-| `missionAlerts` | `{ minPayoutCents, maxDistanceMi }`. Each is `null` for no limit. |
-| `quietHours` | `{ enabled, start: "HH:mm", end: "HH:mm", timezone, allowUrgent }` |
+| `missionAlerts` | `{ minPayoutCents, maxDistanceMi, serviceTypes }`. The limits are `null` for no limit; an empty `serviceTypes` means every service. |
+| `timezone` | The user's IANA time zone |
+| `quietHours` | `{ enabled, start: "HH:mm", end: "HH:mm", allowUrgent }` |
+| `digest` | `{ enabled, hour: 0-23, skipEmpty }` |
 
 `PUT` validates with the same rules as the website form and returns 422 `invalid_settings` with a
 message on bad input.
+
+### Pilot tools
+
+| Route | Who | What |
+| --- | --- | --- |
+| `GET /v1/users/:id/today` | all | Today's summary in the user's settings time zone. The `TodaySummary` shape is also the `digest.daily` event data. |
+| `GET /v1/users/:id/stats` | pilots | `PilotStats`: work done, paid this month and year, rating, last 3 reviews, next-tier requirement rows. |
+| `GET /v1/users/:id/duty` and `PUT /v1/users/:id/duty` | pilots | `{ onDuty }`. Going on duty uses the website switch's rule: credentials must be verified and current. |
+| `POST /v1/users/:id/jobs/:jobId/steps` | pilots | `{ step, note }` → `{ jobId, step, at }`. Same rules and client notifications as the website's live status. Not the job's pilot → 404. |
+| `DELETE /v1/users/:id/link` | all | Unlinks Discord on Argus. |
 
 ### `GET /v1/status`
 
@@ -173,7 +187,7 @@ keyed with `ARGUS_WEBHOOK_SECRET`. Sign the exact bytes you send.
 | Type | `data` | Emitted when (platform hook) |
 | --- | --- | --- |
 | `service.status_changed` | full `/v1/status` body | status changes (manual or health monitor) |
-| `mission.posted` | `missionId, title, serviceType, locality, distanceMi, payoutCents, scheduledFor` | job alert sweep, once per alerted pilot (`userId` set) and optionally once as a broadcast |
+| `mission.posted` | `missionId, title, serviceType, serviceId, locality, distanceMi, payoutCents, scheduledFor` | job alert sweep, once per alerted pilot (`userId` set) and optionally once as a broadcast |
 | `job.status_changed` | `jobId, title, from, to` | any `projects.status` change; send to the client and to the assigned pilot |
 | `job.step` | `jobId, title, step, note` | a pilot posts a `job_status_updates` step; send to the client |
 | `job.deliverables_ready` | `jobId, title, deliverableCount` | job enters `review` |
@@ -181,6 +195,8 @@ keyed with `ARGUS_WEBHOOK_SECRET`. Sign the exact bytes you send.
 | `credential.expiring` | `kind, expiresAt, daysRemaining` | `credential-expiry` cron ladder |
 | `credential.reviewed` | `kind, status, note` | admin approves or rejects a credential |
 | `dispute.updated` | `disputeId, jobId, status, resolution` | dispute opened or changed; send to client and pilot |
+| `account.test` | `requestedAt` | "Send a test DM" on the pilot portal's Discord Bot page |
+| `digest.daily` | `TodaySummary` | the hourly job-alerts sweep, once per local day at the user's chosen hour |
 
 Use `pnpm argus:event <type> --discord <id>` to send correctly signed samples of each type to a
 local bot.

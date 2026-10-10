@@ -13,6 +13,9 @@ import {
   type BotSettings,
   botSettingsSchema,
   DEFAULT_BOT_SETTINGS,
+  type FieldStepResult,
+  type PilotStats,
+  type TodaySummary,
   type CredentialSummary,
   type Earnings,
   type JobDetail,
@@ -40,6 +43,7 @@ interface UserRow {
   verification_status: CredentialSummary['verificationStatus'];
   standing_tier: CredentialSummary['standingTier'];
   paused: number;
+  on_duty: number;
 }
 
 interface JobRow {
@@ -77,6 +81,15 @@ interface MissionRow {
   status: 'open' | 'accepted';
   posted_at: string;
 }
+
+/** Mock service labels -> the platform's service ids (lib/platform/pricing.ts SERVICES). */
+const MOCK_SERVICE_IDS: Record<string, string> = {
+  'Real Estate Photography': 'realestate',
+  'Roof Inspection': 'roof',
+  'Construction Progress': 'construction',
+  'Mapping & Orthomosaics': 'survey',
+  'Aerial Photography': 'realestate',
+};
 
 const ACTIVE_STATUSES: JobStatus[] = ['awaiting_payment', 'pending', 'scheduled', 'in_progress', 'review', 'needs_review'];
 
@@ -207,6 +220,7 @@ export class MockArgusClient implements ArgusClient {
         id: row.id,
         title: row.title,
         serviceType: row.service_type,
+        serviceId: MOCK_SERVICE_IDS[row.service_type] ?? null,
         locality: row.locality,
         distanceMi: row.distance_mi,
         payoutCents: row.payout_cents,
@@ -304,6 +318,118 @@ export class MockArgusClient implements ArgusClient {
       paused: user.paused === 1,
       credentials: rows,
     };
+  }
+
+  async getToday(argusUserId: string): Promise<TodaySummary> {
+    const user = this.requireUser(argusUserId);
+    const { timezone } = await this.getBotSettings(argusUserId);
+    const now = this.now().setZone(timezone);
+    const today = now.toISODate()!;
+    const weekEnd = now.plus({ days: 7 }).toISODate()!;
+    const active = await this.listJobs(argusUserId, 'active');
+    let pilot: TodaySummary['pilot'] = null;
+    if (user.role === 'pilot') {
+      const [board, money, creds] = await Promise.all([
+        this.listOpenMissions(argusUserId),
+        this.getEarnings(argusUserId),
+        this.getCredentials(argusUserId),
+      ]);
+      const soon = now.plus({ days: 30 }).toISODate()!;
+      pilot = {
+        onDuty: user.on_duty === 1,
+        canAccept: board.canAccept,
+        openMissions: board.missions.length,
+        bestPayoutCents: board.missions.reduce((best, m) => Math.max(best, m.payoutCents), 0),
+        pendingPayoutCents: money.pendingCents,
+        credentialAlerts: creds.credentials.filter((c) => c.status !== 'approved' || (c.expiresAt !== null && c.expiresAt <= soon)),
+      };
+    }
+    return {
+      date: today,
+      timezone,
+      todayJobs: active.filter((job) => job.scheduledFor === today),
+      upcomingJobs: active.filter((job) => job.scheduledFor !== null && job.scheduledFor > today && job.scheduledFor <= weekEnd).length,
+      awaitingReview: active.filter((job) => job.status === 'review' && job.viewerRole === 'client').length,
+      pilot,
+    };
+  }
+
+  async getStats(argusUserId: string): Promise<PilotStats> {
+    const user = this.requirePilot(argusUserId);
+    const now = this.now();
+    const count = (status: string) =>
+      (this.db.prepare('SELECT COUNT(*) AS n FROM mock_jobs WHERE pilot_user_id = ? AND status = ?').get(argusUserId, status) as { n: number }).n;
+    const paidSince = (from: string) =>
+      (
+        this.db
+          .prepare(`SELECT COALESCE(SUM(amount_cents), 0) AS total FROM mock_payouts WHERE pilot_user_id = ? AND status = 'paid' AND date >= ?`)
+          .get(argusUserId, from) as { total: number }
+      ).total;
+    const reviews = this.db
+      .prepare('SELECT rating, body, date FROM mock_reviews WHERE pilot_user_id = ? ORDER BY date DESC, id DESC')
+      .all(argusUserId) as { rating: number; body: string | null; date: string }[];
+    const rating = reviews.length ? Math.round((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 100) / 100 : null;
+    const completed = count('completed');
+    return {
+      completedMissions: completed,
+      activeMissions: count('scheduled') + count('in_progress'),
+      rating,
+      reviewCount: reviews.length,
+      earnedThisMonthCents: paidSince(now.startOf('month').toISODate()!),
+      earnedThisYearCents: paidSince(now.startOf('year').toISODate()!),
+      tier: user.standing_tier,
+      paused: user.paused === 1,
+      nextTier: {
+        tier: 'trusted',
+        requirements: [
+          { label: 'Completed jobs', met: completed >= 25, have: String(completed), need: '25' },
+          { label: 'Client reviews', met: reviews.length >= 10, have: String(reviews.length), need: '10' },
+          { label: 'Rating, last 90 days', met: (rating ?? 0) >= 4.7, have: rating === null ? '—' : `${rating.toFixed(2)}★`, need: '4.7★' },
+          { label: 'Credentials current', met: user.paused === 0, have: user.paused === 0 ? 'Current' : 'Expired', need: 'Current' },
+        ],
+      },
+      recentReviews: reviews.slice(0, 3),
+    };
+  }
+
+  async getDuty(argusUserId: string): Promise<boolean> {
+    return this.requirePilot(argusUserId).on_duty === 1;
+  }
+
+  async setDuty(argusUserId: string, onDuty: boolean): Promise<boolean> {
+    const user = this.requirePilot(argusUserId);
+    if (onDuty && (user.verification_status !== 'verified' || user.paused === 1)) {
+      throw new ArgusRejectedError('Cannot go on duty', 'Your credentials must be verified and current before you go on duty.');
+    }
+    this.db.prepare('UPDATE mock_users SET on_duty = ? WHERE argus_user_id = ?').run(onDuty ? 1 : 0, argusUserId);
+    return onDuty;
+  }
+
+  async postJobStep(argusUserId: string, jobId: number, step: JobStep, _note: string | null): Promise<FieldStepResult> {
+    this.requirePilot(argusUserId);
+    const job = this.db.prepare('SELECT status FROM mock_jobs WHERE id = ? AND pilot_user_id = ?').get(jobId, argusUserId) as
+      | { status: JobStatus }
+      | undefined;
+    if (!job) throw new ArgusNotFoundError(`Job ${jobId} not found`);
+    if (job.status !== 'scheduled' && job.status !== 'in_progress') {
+      throw new ArgusRejectedError('Job not active', "This job isn't active, so its progress can't be updated.");
+    }
+    const done = (this.db.prepare('SELECT step FROM mock_job_steps WHERE job_id = ?').all(jobId) as { step: JobStep }[]).map((r) => r.step);
+    const furthest = Math.max(-1, ...done.map((s) => JOB_STEPS.indexOf(s)));
+    if (JOB_STEPS.indexOf(step) <= furthest) {
+      throw new ArgusRejectedError('Step already done', 'That step is already done. Progress only moves forward.');
+    }
+    const at = this.now().toISO()!;
+    this.db.transaction(() => {
+      this.db.prepare('INSERT INTO mock_job_steps (job_id, step, at) VALUES (?, ?, ?)').run(jobId, step, at);
+      if (job.status === 'scheduled') this.db.prepare(`UPDATE mock_jobs SET status = 'in_progress' WHERE id = ?`).run(jobId);
+    })();
+    return { jobId, step, at: new Date(at).toISOString() };
+  }
+
+  async unlinkAccount(argusUserId: string): Promise<void> {
+    this.requireUser(argusUserId);
+    this.db.prepare('DELETE FROM mock_bot_settings WHERE argus_user_id = ?').run(argusUserId);
   }
 
   async getBotSettings(argusUserId: string): Promise<BotSettings> {
@@ -515,6 +641,11 @@ export class MockArgusClient implements ArgusClient {
       credential.run(argusUserId, 'insurance', 'approved', date(25), 'annual');
       credential.run(argusUserId, 'id', 'approved', null, null);
       credential.run(argusUserId, 'drone_reg', 'approved', today.plus({ months: 30 }).toISODate(), null);
+
+      const addReview = this.db.prepare('INSERT INTO mock_reviews (pilot_user_id, rating, body, date) VALUES (?, ?, ?, ?)');
+      addReview.run(argusUserId, 5, 'Fast, careful, and the map was exactly what our surveyor needed.', date(-10));
+      addReview.run(argusUserId, 5, 'Great communication on site.', date(-18));
+      addReview.run(argusUserId, 4, null, date(-41));
       return;
     }
 

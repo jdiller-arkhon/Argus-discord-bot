@@ -124,6 +124,8 @@ export const openMissionSchema = z.object({
   /** Distance from the pilot's service area, when known. */
   distanceMi: z.number().nonnegative().nullable(),
   payoutCents: cents.nonnegative(),
+  /** Service id ("roof"), for matching the user's service filter. */
+  serviceId: z.string().max(40).nullable().default(null),
   scheduledFor: isoDate.nullable(),
   timeWindow: z.string().max(50).nullable(),
   imageCount: z.number().int().nonnegative(),
@@ -221,23 +223,90 @@ export const ALERT_TYPES = [
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:mm');
 
 export const botSettingsSchema = z.object({
+  /** The user's time zone; quiet hours and the daily digest use it. */
+  timezone: z.string().min(1).max(64),
   disabledAlerts: z.array(z.enum(ALERT_TYPES)).max(ALERT_TYPES.length),
   missionAlerts: z.object({
     minPayoutCents: z.number().int().min(0).nullable(),
     maxDistanceMi: z.number().int().min(1).nullable(),
+    /** Service ids to DM missions for; empty = every service. */
+    serviceTypes: z.array(z.string().max(40)).max(30).default([]),
   }),
   quietHours: z.object({
     enabled: z.boolean(),
     start: hhmm,
     end: hhmm,
-    timezone: z.string().min(1).max(64),
     allowUrgent: z.boolean(),
+  }),
+  /** Sent by Argus at the chosen local hour (event `digest.daily`). */
+  digest: z.object({
+    enabled: z.boolean(),
+    hour: z.number().int().min(0).max(23),
+    skipEmpty: z.boolean(),
   }),
 });
 export type BotSettings = z.infer<typeof botSettingsSchema>;
 
 export const DEFAULT_BOT_SETTINGS: BotSettings = {
+  timezone: 'America/Denver',
   disabledAlerts: [],
-  missionAlerts: { minPayoutCents: null, maxDistanceMi: null },
-  quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'America/Denver', allowUrgent: true },
+  missionAlerts: { minPayoutCents: null, maxDistanceMi: null, serviceTypes: [] },
+  quietHours: { enabled: false, start: '22:00', end: '07:00', allowUrgent: true },
+  digest: { enabled: false, hour: 7, skipEmpty: true },
 };
+
+// ---------------------------------------------------------------- today / digest
+
+export const todaySummarySchema = z.object({
+  date: isoDate,
+  timezone: z.string().min(1).max(64),
+  todayJobs: z.array(jobSummarySchema),
+  upcomingJobs: z.number().int().nonnegative(),
+  awaitingReview: z.number().int().nonnegative(),
+  /** Pilot-only section; null for clients. */
+  pilot: z
+    .object({
+      onDuty: z.boolean(),
+      canAccept: z.boolean(),
+      openMissions: z.number().int().nonnegative(),
+      bestPayoutCents: z.number().int().nonnegative(),
+      pendingPayoutCents: z.number().int().nonnegative(),
+      credentialAlerts: credentialSummarySchema.shape.credentials,
+    })
+    .nullable(),
+});
+export type TodaySummary = z.infer<typeof todaySummarySchema>;
+
+// ---------------------------------------------------------------- stats
+
+export const pilotStatsSchema = z.object({
+  completedMissions: z.number().int().nonnegative(),
+  activeMissions: z.number().int().nonnegative(),
+  rating: z.number().min(0).max(5).nullable(),
+  reviewCount: z.number().int().nonnegative(),
+  earnedThisMonthCents: z.number().int().nonnegative(),
+  earnedThisYearCents: z.number().int().nonnegative(),
+  tier: standingTierSchema.nullable(),
+  paused: z.boolean(),
+  nextTier: z
+    .object({
+      tier: standingTierSchema,
+      requirements: z.array(
+        z.object({ label: z.string().max(100), met: z.boolean(), have: z.string().max(40), need: z.string().max(40) }),
+      ),
+    })
+    .nullable(),
+  recentReviews: z.array(
+    z.object({ rating: z.number().int().min(1).max(5), body: z.string().max(200).nullable(), date: isoDate }),
+  ),
+});
+export type PilotStats = z.infer<typeof pilotStatsSchema>;
+
+export const dutySchema = z.object({ onDuty: z.boolean() });
+
+export const fieldStepResultSchema = z.object({
+  jobId: z.number().int().positive(),
+  step: jobStepSchema,
+  at: z.string().datetime({ offset: true }),
+});
+export type FieldStepResult = z.infer<typeof fieldStepResultSchema>;

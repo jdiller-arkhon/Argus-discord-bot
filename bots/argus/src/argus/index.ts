@@ -44,5 +44,11 @@ export function withStatusFrom(client: ArgusClient, statusSource: Pick<ArgusClie
     getCredentials: (userId) => client.getCredentials(userId),
     getBotSettings: (userId) => client.getBotSettings(userId),
     updateBotSettings: (userId, settings) => client.updateBotSettings(userId, settings),
+    getToday: (userId) => client.getToday(userId),
+    getStats: (userId) => client.getStats(userId),
+    getDuty: (userId) => client.getDuty(userId),
+    setDuty: (userId, onDuty) => client.setDuty(userId, onDuty),
+    postJobStep: (userId, jobId, step, note) => client.postJobStep(userId, jobId, step, note),
+    unlinkAccount: (userId) => client.unlinkAccount(userId),
   };
 }

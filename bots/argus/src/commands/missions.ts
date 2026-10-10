@@ -76,7 +76,7 @@ export function missionsSubcommand(context: ArgusContext): Subcommand {
     async execute(interaction) {
       const link = requirePilot(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const board = await callArgus(context, 'listOpenMissions', () => context.argus.listOpenMissions(link.argusUserId));
+      const board = await callArgus(context, 'listOpenMissions', () => context.argus.listOpenMissions(link.argusUserId), link.discordUserId);
       await interaction.editReply(missionBoardMessage(board, context.now().toISODate()!));
     },
   };
@@ -92,7 +92,7 @@ export function missionsComponent(context: ArgusContext): ComponentHandler {
       const missionId = Number(interaction.values[0]);
       await interaction.deferUpdate();
       // Re-read the board: the mission may have been taken since the list was shown.
-      const board = await callArgus(context, 'listOpenMissions', () => context.argus.listOpenMissions(link.argusUserId));
+      const board = await callArgus(context, 'listOpenMissions', () => context.argus.listOpenMissions(link.argusUserId), link.discordUserId);
       const mission = board.missions.find((m) => m.id === missionId);
       const today = context.now().toISODate()!;
       if (!mission) {
@@ -117,7 +117,7 @@ export function missionsComponent(context: ArgusContext): ComponentHandler {
 
       // Remove the buttons first so a double click cannot submit twice.
       await interaction.update({ content: `Accepting mission #${missionId}…`, components: [] });
-      const result = await callArgus(context, 'acceptMission', () => context.argus.acceptMission(link.argusUserId, missionId));
+      const result = await callArgus(context, 'acceptMission', () => context.argus.acceptMission(link.argusUserId, missionId), link.discordUserId);
       context.logger.info('Mission accepted', { discordUserId: link.discordUserId, missionId, jobId: result.jobId });
       await interaction.editReply({
         content: '',

@@ -63,6 +63,7 @@ const mission: OpenMission = {
   locality: 'Golden, CO',
   distanceMi: 12.44,
   payoutCents: 18_000,
+  serviceId: 'realestate',
   scheduledFor: '2026-10-12',
   timeWindow: 'golden_hour',
   imageCount: 25,

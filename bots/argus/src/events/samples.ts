@@ -37,6 +37,7 @@ export function sampleEvent(
           missionId: 512,
           title: 'Listing photos: 4-bed home',
           serviceType: 'Real Estate Photography',
+          serviceId: 'realestate',
           locality: 'Golden, CO',
           distanceMi: 12.4,
           payoutCents: 18_000,
@@ -57,6 +58,43 @@ export function sampleEvent(
       return { ...base, type, data: { kind: 'insurance', expiresAt: inDays(14), daysRemaining: 14 } };
     case 'credential.reviewed':
       return { ...base, type, data: { kind: 'faa_part107', status: 'approved', note: null } };
+    case 'account.test':
+      return { ...base, type, data: { requestedAt: now.toISOString() } };
+    case 'digest.daily':
+      return {
+        ...base,
+        type,
+        data: {
+          date: now.toISOString().slice(0, 10),
+          timezone: 'America/Denver',
+          todayJobs: [
+            {
+              id: 1042,
+              title: 'Roof Inspection · Boulder, CO',
+              serviceType: 'Roof Inspection',
+              status: 'scheduled',
+              paymentStatus: 'paid',
+              scheduledFor: now.toISOString().slice(0, 10),
+              timeWindow: 'morning',
+              amountCents: 26_500,
+              locality: 'Boulder, CO',
+              viewerRole: 'pilot',
+              counterpartName: 'Cal M.',
+              latestStep: null,
+            },
+          ],
+          upcomingJobs: 2,
+          awaitingReview: 0,
+          pilot: {
+            onDuty: true,
+            canAccept: true,
+            openMissions: 3,
+            bestPayoutCents: 61_000,
+            pendingPayoutCents: 87_000,
+            credentialAlerts: [{ kind: 'insurance', status: 'approved', expiresAt: inDays(14), insuranceMode: 'annual' }],
+          },
+        },
+      };
     case 'dispute.updated':
       return { ...base, type, data: { disputeId: 77, jobId: 1042, status: 'resolved', resolution: 'Partial refund issued to the client.' } };
   }

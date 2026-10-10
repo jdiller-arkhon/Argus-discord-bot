@@ -24,12 +24,31 @@ describe('/argus link and unlink', () => {
     expect((await linkAs(run, 'client-1234')).last.content).toContain("That link code isn't valid");
   });
 
-  it('unlinks and is idempotent', async () => {
-    const { run, context } = setup();
+  it('unlinks after confirmation, on Argus too, and is idempotent', async () => {
+    const { run, context, mock } = setup();
     await linkAs(run, 'CLIENT-1234');
-    expect((await run(command('unlink'))).last.content).toContain('no longer linked');
+    const argusUserId = `mock-client-${USER}`;
+    await mock.updateBotSettings(argusUserId, { ...(await mock.getBotSettings(argusUserId)), disabledAlerts: ['job.step'] });
+
+    const ask = await run(command('unlink'));
+    expect(ask.last.content).toContain('Unlink Discord from Argus?');
+    expect(context.store.getLink(USER)).toBeDefined();
+    expect((await run(button('argus-account:cancel'))).last.content).toBe('Cancelled. You are still linked.');
+
+    const done = await run(button('argus-account:unlink'));
+    expect(done.last.content).toContain('no longer linked');
     expect(context.store.getLink(USER)).toBeUndefined();
+    // The mock's Argus side forgot the user's bot settings.
+    expect((await mock.getBotSettings(argusUserId)).disabledAlerts).toEqual([]);
     expect((await run(command('unlink'))).last.content).toContain('nothing to remove');
+  });
+
+  it('drops a stale link when Argus no longer knows the account', async () => {
+    const { run, context } = setup();
+    context.store.upsertLink({ discordUserId: USER, argusUserId: 'mock-pilot-gone', displayName: 'Gone', role: 'pilot' });
+    const reply = await run(command('earnings'));
+    expect(reply.last.content).toContain('Your Discord link was removed on Argus');
+    expect(context.store.getLink(USER)).toBeUndefined();
   });
 });
 
@@ -177,8 +196,10 @@ describe('/argus alerts', () => {
     const argusUserId = `mock-pilot-${USER}`;
     await mock.updateBotSettings(argusUserId, {
       disabledAlerts: [],
-      missionAlerts: { minPayoutCents: 20_000, maxDistanceMi: 30 },
-      quietHours: { enabled: true, start: '22:00', end: '06:30', timezone: 'America/Denver', allowUrgent: true },
+      timezone: 'America/Denver',
+      missionAlerts: { minPayoutCents: 20_000, maxDistanceMi: 30, serviceTypes: [] },
+      quietHours: { enabled: true, start: '22:00', end: '06:30', allowUrgent: true },
+      digest: { enabled: true, hour: 6, skipEmpty: true },
     });
     const panel = await run(command('alerts'));
     expect(panel.lastEmbed?.description).toContain('Mission alerts: only at least $200.00, within 30 mi.');
@@ -189,7 +210,8 @@ describe('/argus alerts', () => {
     const save = preview.lastComponents.find((c) => c.custom_id?.startsWith('argus-alerts:save:'))!;
     await run(button(save.custom_id!));
     const stored = await mock.getBotSettings(argusUserId);
-    expect(stored.missionAlerts).toEqual({ minPayoutCents: 20_000, maxDistanceMi: 30 });
+    expect(stored.missionAlerts).toEqual({ minPayoutCents: 20_000, maxDistanceMi: 30, serviceTypes: [] });
+    expect(stored.digest.hour).toBe(6);
     expect(stored.quietHours.end).toBe('06:30');
     expect(stored.disabledAlerts).not.toContain('mission.posted');
     expect(stored.disabledAlerts).toContain('payout.paid');
@@ -248,5 +270,89 @@ describe('/argus status and help', () => {
     const click = button('argus-ticket:open');
     await route(click as never);
     expect(click.last.content).toBe('Support tickets can only be opened from the server, not in DMs.');
+  });
+});
+
+describe('pilot tools', () => {
+  it('shows today, with duty, missions, payouts and documents', async () => {
+    const { run } = setup();
+    await linkAs(run, 'PILOT-1234');
+    const reply = await run(command('today'));
+    const fields = Object.fromEntries((reply.lastEmbed?.fields ?? []).map((f) => [f.name, f.value]));
+    expect(reply.lastEmbed?.title).toBe('Today on Argus');
+    expect(fields["Today's jobs (1)"]).toContain('Solar array inspection');
+    expect(fields.Duty).toContain('Off duty');
+    expect(fields['Open missions']).toContain('best $610.00');
+    expect(fields['Documents needing attention']).toContain('Liability insurance');
+  });
+
+  it('shows clients what is waiting on them', async () => {
+    const { run } = setup();
+    await linkAs(run, 'CLIENT-1234');
+    const fields = Object.fromEntries(((await run(command('today'))).lastEmbed?.fields ?? []).map((f) => [f.name, f.value]));
+    expect(fields['Waiting on you']).toContain('1 job ready for your review');
+    expect(fields.Duty).toBeUndefined();
+  });
+
+  it('groups the schedule by day', async () => {
+    const { run } = setup();
+    await linkAs(run, 'PILOT-1234');
+    const names = ((await run(command('schedule'))).lastEmbed?.fields ?? []).map((f) => f.name);
+    expect(names).toEqual(['Today · Sat, Oct 10', 'Tomorrow · Sun, Oct 11']);
+  });
+
+  it('posts a field step only after confirmation', async () => {
+    const { run, mock } = setup();
+    await linkAs(run, 'PILOT-1234');
+    const argusUserId = `mock-pilot-${USER}`;
+    const jobId = (await mock.listJobs(argusUserId, 'active')).find((j) => j.title === 'Vineyard aerial photos')!.id;
+
+    const ask = await run(command('step', { job: jobId, step: 'en_route' }));
+    expect(ask.lastEmbed?.title).toBe(`Post "Pilot en route" on job #${jobId}?`);
+    expect((await mock.getJob(argusUserId, jobId)).steps).toEqual([]);
+
+    const done = await run(button(`argus-tools:step:${jobId}:en_route`));
+    expect(done.lastEmbed?.title).toBe(`✅ Pilot en route · job #${jobId}`);
+    const job = await mock.getJob(argusUserId, jobId);
+    expect(job.status).toBe('in_progress');
+    expect(job.steps.map((s) => s.step)).toEqual(['en_route']);
+
+    const again = await run(button(`argus-tools:step:${jobId}:en_route`));
+    expect(again.last.content).toBe('That step is already done. Progress only moves forward.');
+  });
+
+  it('changes duty only after confirmation, and refuses unverified pilots', async () => {
+    const { run, mock } = setup();
+    await linkAs(run, 'PILOT-1234');
+    const argusUserId = `mock-pilot-${USER}`;
+    expect((await run(command('duty'))).lastEmbed?.title).toBe('⚪ You are off duty');
+
+    const ask = await run(command('duty', { set: 'on' }));
+    expect(ask.lastComponents.map((c) => c.custom_id)).toEqual(['argus-tools:duty:on', 'argus-tools:cancel']);
+    expect(await mock.getDuty(argusUserId)).toBe(false);
+    expect((await run(button('argus-tools:duty:on'))).lastEmbed?.title).toBe('🟢 You are on duty');
+    expect(await mock.getDuty(argusUserId)).toBe(true);
+
+    mock.setPilotVerification(argusUserId, 'pending');
+    await run(button('argus-tools:duty:off'));
+    const refused = await run(button('argus-tools:duty:on'));
+    expect(refused.last.content).toContain('credentials must be verified');
+  });
+
+  it('shows stats with reviews and the road to the next tier', async () => {
+    const { run } = setup();
+    await linkAs(run, 'PILOT-1234');
+    const embed = (await run(command('stats'))).lastEmbed!;
+    const fields = Object.fromEntries((embed.fields ?? []).map((f) => [f.name, f.value]));
+    expect(fields.Rating).toBe('4.67 ★★★★★ (3 reviews)');
+    expect(fields['Road to Trusted']).toContain('▫️ Completed jobs: 1 / 25');
+    expect(fields['Latest reviews']).toContain('Fast, careful');
+  });
+
+  it('keeps pilot tools to pilots', async () => {
+    const { run } = setup();
+    await linkAs(run, 'CLIENT-1234');
+    for (const sub of ['stats', 'duty']) expect((await run(command(sub))).last.content).toBe(PILOT_ONLY_MESSAGE);
+    expect((await run(command('step', { job: 1, step: 'on_site' }))).last.content).toBe(PILOT_ONLY_MESSAGE);
   });
 });

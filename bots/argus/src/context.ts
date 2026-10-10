@@ -56,10 +56,25 @@ export function requirePilot(context: ArgusContext, discordUserId: string): Link
  * Runs an Argus API call and converts its typed errors into messages the user
  * can act on. Unexpected failures are logged and rethrown as-is.
  */
-export async function callArgus<T>(context: ArgusContext, action: string, call: () => Promise<T>): Promise<T> {
+export async function callArgus<T>(
+  context: ArgusContext,
+  action: string,
+  call: () => Promise<T>,
+  /** The caller's Discord ID: a link Argus no longer knows is removed here too. */
+  discordUserId?: string,
+): Promise<T> {
   try {
     return await call();
   } catch (error) {
+    if (error instanceof ArgusUserNotFoundError && discordUserId) {
+      // Unlinked on the website (or the account was retired): forget the
+      // stale link so the user is not stuck with a broken one.
+      context.store.deleteLink(discordUserId);
+      context.logger.info('Removed stale Argus link', { discordUserId, action });
+      throw new UserFacingError(
+        'Your Discord link was removed on Argus, so it has been removed here too. Link again with `/argus link code:<code>`.',
+      );
+    }
     if (error instanceof ArgusInvalidLinkCodeError) {
       throw new UserFacingError(
         "That link code isn't valid. Codes are single-use and expire; generate a new one in Argus and try again.",

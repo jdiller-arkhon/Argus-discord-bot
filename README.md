@@ -16,12 +16,20 @@ and follows the same conventions (see `CLAUDE.md`).
 - **Bot settings on the Arkhon website:** pilots open **Pilot portal → Discord Bot** to link Discord and
   choose:
   - which DM alerts they get;
-  - mission alert filters: minimum payout and maximum distance;
-  - quiet hours. DMs are held until quiet hours end, and urgent ones can come through anyway.
+  - mission alert filters: minimum payout, maximum distance and services;
+  - quiet hours in their own time zone. DMs are held until quiet hours end, and urgent ones can come through anyway;
+  - a daily digest DM at the hour they choose.
+
+  The page also has a **Send a test DM** button and a command reference.
 
   `/argus alerts` edits the same alert list from Discord.
-- **Product commands:** `/argus jobs`, `/argus job id:<n>`, `/argus missions` (accept with
-  confirmation), `/argus earnings`, and `/argus credentials`.
+- **Product commands:**
+  - `/argus today` and `/argus schedule`.
+  - `/argus jobs` and `/argus job id:<n>`.
+  - `/argus missions`: accept with a confirmation.
+  - `/argus earnings`, `/argus credentials` and `/argus stats`.
+  - `/argus step`: post live field updates from the field.
+  - `/argus duty`: go on or off duty.
 - **Support:** `/argus help` shows FAQ answers from `bots/argus/faq.json` and a button that opens a
   private support ticket through the shared ticket flow.
 

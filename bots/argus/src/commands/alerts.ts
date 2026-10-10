@@ -48,15 +48,17 @@ function otherSettingsLine(role: ArgusRole, settings: BotSettings, appUrl: strin
     ].filter(Boolean);
     parts.push(`Mission alerts: only ${filters.join(', ')}.`);
   }
+  const zone = settings.timezone.replace(/_/g, ' ');
   if (settings.quietHours.enabled) {
-    parts.push(
-      `Quiet hours: ${settings.quietHours.start}–${settings.quietHours.end} (${settings.quietHours.timezone.replace(/_/g, ' ')}).`,
-    );
+    parts.push(`Quiet hours: ${settings.quietHours.start}–${settings.quietHours.end} (${zone}).`);
+  }
+  if (settings.digest.enabled) {
+    parts.push(`Daily digest: around ${String(settings.digest.hour).padStart(2, '0')}:00 (${zone}).`);
   }
   const where =
     role === 'client'
       ? 'Change quiet hours and filters in Argus.'
-      : `Mission filters and quiet hours: ${dashboardUrl(appUrl)}`;
+      : `Mission filters, quiet hours and the daily digest: ${dashboardUrl(appUrl)}`;
   return [...parts, where].join('\n');
 }
 
@@ -124,7 +126,7 @@ export function alertsSubcommand(context: ArgusContext): Subcommand {
     async execute(interaction) {
       const link = requireLink(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const settings = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId));
+      const settings = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId), link.discordUserId);
       await interaction.editReply(alertsPanel(link.role, settings, context.config.env.ARGUS_APP_URL));
     },
   };
@@ -154,9 +156,12 @@ export function alertsComponent(context: ArgusContext): ComponentHandler {
       const disabledAlerts = decodeDisabled(arg).filter(isPersonalAlertType);
       await interaction.deferUpdate();
       // Re-read so a quiet-hours change made on the website meanwhile is kept.
-      const current = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId));
-      const saved = await callArgus(context, 'updateBotSettings', () =>
-        context.settings.update(link.argusUserId, { ...current, disabledAlerts }),
+      const current = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId), link.discordUserId);
+      const saved = await callArgus(
+        context,
+        'updateBotSettings',
+        () => context.settings.update(link.argusUserId, { ...current, disabledAlerts }),
+        link.discordUserId,
       );
       context.logger.info('Alert preferences updated', { discordUserId: link.discordUserId, disabledAlerts });
       await interaction.editReply(alertsPanel(link.role, saved, appUrl(), { saved: true }));

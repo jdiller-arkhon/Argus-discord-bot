@@ -55,8 +55,12 @@ Run `pnpm typecheck && pnpm test` before committing.
   call that can exceed Discord's 3 second window. `/argus status` is the only public reply.
 - **Writes to Argus need a confirmation button.** Anything that changes data in Argus shows the
   details with Confirm/Cancel (or Save/Cancel) first and removes the buttons before calling the API
-  (see `commands/missions.ts`). The writes are accepting a mission and saving alert choices from
-  `/argus alerts`.
+  (see `commands/missions.ts`). The writes are:
+  - accepting a mission;
+  - saving alert choices from `/argus alerts`;
+  - posting a field step (`/argus step`);
+  - changing duty (`/argus duty`);
+  - unlinking.
 - **Storage** is SQLite via better-sqlite3 (`openDatabase(path, migrations)`). Migrations are
   append-only and numbered from 1. Never edit a shipped migration.
 - **Outbound HTTP** goes through `request`/`requestJson` (per-attempt timeout, exponential
@@ -83,13 +87,18 @@ pilots also use Certa, Arkhon's flight logbook, to log the flights they fly for 
 | Command | What it does |
 | --- | --- |
 | `/argus link code:<code>` | Redeems a one-time code from Argus (Settings → Discord). Notes a Certa link if one exists |
-| `/argus unlink` | Removes the link and alert preferences |
+| `/argus unlink` | After Confirm, removes the link here and on Argus |
 | `/argus status` | Current service health (public reply) |
+| `/argus today` | Today in the user's time zone: jobs, open missions, duty, pending payouts, documents (same view as the daily digest) |
+| `/argus schedule` | The next 7 days of jobs grouped by day |
 | `/argus jobs [scope]` | Client: bookings. Pilot: assigned jobs. Active or recently finished |
 | `/argus job id:<n>` | One job: live step checklist, schedule, money, deliverables |
 | `/argus missions` | Pilot: open missions; pick one → confirm → accept |
 | `/argus earnings` | Pilot: pending, instant-payout-eligible, paid totals, recent payouts |
 | `/argus credentials` | Pilot: verification, standing tier, credential status and expiry |
+| `/argus stats` | Pilot: rating, latest reviews, paid this month/year, progress to the next standing tier |
+| `/argus step job:<n> step:<step>` | Pilot: post a live field step (en route → uploading) after Confirm |
+| `/argus duty [set]` | Pilot: check duty, or go on/off duty after Confirm |
 | `/argus alerts` | Pick personal DM alerts (filtered to the account's role), then Save to Argus |
 | `/argus help [topic]` | FAQ from `faq.json` plus "Open an Argus ticket" (or a support link) |
 
@@ -112,6 +121,17 @@ with `PILOT_ONLY_MESSAGE` for client accounts.
 - **`/argus credentials`**: a lapsed Part 107 or insurance policy pauses standing and blocks
   missions. Showing expiry countdowns (🟡 within 30 days) before that happens keeps pilots
   eligible. Document numbers are never part of the response.
+- **`/argus today`** (and the daily digest DM): one look at the day, so pilots don't have to open
+  four commands. Built by Argus (`GET /today`) so the command and the digest always agree.
+- **`/argus schedule`**: pilots plan their week around the calendar, not around a job list.
+- **`/argus step`**: pilots are in the field with a phone and Discord open. Posting "on site" or
+  "in flight" from there updates the client's live timeline with the same rules as the website.
+- **`/argus duty`**: going off duty for a day shouldn't need the website.
+- **`/argus stats`**: reviews and the gap to the next standing tier, which decides how early a pilot
+  sees new missions.
+
+When Argus answers `user_not_found` for a linked user (they unlinked on the website, or the account
+was retired), `callArgus` removes the local link and tells them to link again.
 
 ### Argus API
 
@@ -137,6 +157,8 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
   delivery throws, so Argus can retry. Unknown types get a 202.
 - **Routing** is done by `routeEvent()` in `src/events/routing.ts`, which is pure:
   - `service.status_changed` goes to the status monitor.
+  - `account.test` (the website's "Send a test DM") is always DMed, ignoring every setting.
+  - `digest.daily` is DMed and respects quiet hours, but it can't be muted with `/argus alerts`; the user turns it off on the website.
   - An event with a `userId` is DMed to the linked owner unless they muted that type. It is never posted to a channel, because it is about their jobs, money, or credentials.
   - A broadcast (`userId: null`) goes to the `ARGUS_EVENT_ROUTES` channel for its type, or is dropped.
 - **Bot settings live on Argus**, not in the bot. Users edit them in the pilot portal (Arkhon
@@ -145,7 +167,10 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
   defaults if Argus is unreachable, so alerts keep flowing.
   - `disabledAlerts`: alert types turned off. New types default to on.
   - `missionAlerts`: minimum payout and maximum distance for `mission.posted` DMs. Missions with an unknown distance still pass.
-  - `quietHours`: start, end, time zone, and `allowUrgent`. Overnight ranges and DST are handled. During quiet hours, DMs are held in `held_dms` and sent by `startHeldDmDelivery` (every minute) once quiet hours end. `payout.failed` and `dispute.updated` skip the hold when `allowUrgent` is on.
+  - `timezone`: the user's zone, used for quiet hours, `/argus schedule`, and the digest.
+  - `missionAlerts.serviceTypes`: service ids to DM missions for. An empty list means every service.
+  - `digest`: `{ enabled, hour, skipEmpty }`. Argus sends `digest.daily` from its hourly job-alerts sweep, so no extra GitHub Actions minutes are used.
+  - `quietHours`: start, end, and `allowUrgent`. Overnight ranges and DST are handled. During quiet hours, DMs are held in `held_dms` and sent by `startHeldDmDelivery` (every minute) once quiet hours end. `payout.failed` and `dispute.updated` skip the hold when `allowUrgent` is on.
 - `alertsForRole()` limits the alerts menu to alerts that apply to the account. `/argus alerts`
   previews a selection and saves it only on **Save**; the Save button carries the choice as a
   bitmask, and saving re-reads the settings so filters and quiet hours set on the website are kept.

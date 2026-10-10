@@ -9,6 +9,7 @@ import {
   plural,
   statusEmbed,
   STEP_LABELS,
+  todayEmbed,
 } from '../embeds.js';
 import type { ArgusEvent } from './types.js';
 
@@ -116,6 +117,15 @@ function buildEventEmbed(event: ArgusEvent, todayIso: string): EmbedBuilder {
         .setColor(approved ? Colors.success : Colors.danger)
         .setDescription(d.note ?? (approved ? 'Thanks, you are all set.' : 'Upload a new copy in Argus.'));
     }
+
+    case 'account.test':
+      return new EmbedBuilder()
+        .setTitle('✅ Argus test DM')
+        .setColor(Colors.success)
+        .setDescription('Your Discord is linked and Argus can reach you here. Change what the bot sends on the website: Pilot portal → Discord Bot.');
+
+    case 'digest.daily':
+      return todayEmbed(event.data, '☀️ Your Argus day');
 
     case 'dispute.updated': {
       const d = event.data;

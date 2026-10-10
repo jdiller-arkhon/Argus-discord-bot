@@ -176,6 +176,22 @@ export const argusMigrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 3,
+    name: 'mock-duty-and-reviews',
+    sql: `
+      -- Back MockArgusClient's /argus duty and /argus stats.
+      ALTER TABLE mock_users ADD COLUMN on_duty INTEGER NOT NULL DEFAULT 0;
+
+      CREATE TABLE mock_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pilot_user_id TEXT NOT NULL,
+        rating INTEGER NOT NULL,
+        body TEXT,
+        date TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function openArgusDatabase(path: string): Db {

@@ -20,7 +20,7 @@ export function jobsSubcommand(context: ArgusContext): Subcommand {
       const link = requireLink(context, interaction.user.id);
       const scope = interaction.options.getString('scope') === 'recent' ? 'recent' : 'active';
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const jobs = await callArgus(context, 'listJobs', () => context.argus.listJobs(link.argusUserId, scope));
+      const jobs = await callArgus(context, 'listJobs', () => context.argus.listJobs(link.argusUserId, scope), link.discordUserId);
       await interaction.editReply({ embeds: [jobsEmbed(link.displayName, scope, jobs, context.now().toISODate()!)] });
     },
   };
@@ -38,7 +38,7 @@ export function jobSubcommand(context: ArgusContext): Subcommand {
       const link = requireLink(context, interaction.user.id);
       const jobId = interaction.options.getInteger('id', true);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const job = await callArgus(context, 'getJob', () => context.argus.getJob(link.argusUserId, jobId));
+      const job = await callArgus(context, 'getJob', () => context.argus.getJob(link.argusUserId, jobId), link.discordUserId);
       await interaction.editReply({
         embeds: [jobDetailEmbed(job, context.now().toISODate()!, context.config.env.ARGUS_APP_URL)],
       });

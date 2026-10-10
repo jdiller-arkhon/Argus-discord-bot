@@ -15,7 +15,9 @@ import {
   type OpenMission,
   type ServiceState,
   type ServiceStatus,
+  type PilotStats,
   type StandingTier,
+  type TodaySummary,
 } from './argus/types.js';
 import type { FaqEntry } from './faq.js';
 
@@ -384,4 +386,145 @@ export function faqEmbed(entries: readonly FaqEntry[], ticketsEnabled: boolean, 
   }
   for (const entry of entries) embed.addFields({ name: entry.question, value: entry.answer });
   return embed;
+}
+
+// ---------------------------------------------------------------- /argus today and the daily digest
+
+/** Compact one-liner for a job in a list. */
+function shortJob(job: JobSummary): string {
+  const window = formatTimeWindow(job.timeWindow);
+  const live = job.status === 'in_progress' && job.latestStep ? ` · ${STEP_LABELS[job.latestStep]}` : '';
+  return `**#${job.id} · ${job.title}**${window ? ` · ${window}` : ''}\n${jobStatusText(job.status)}${live} · ${job.locality}`;
+}
+
+/**
+ * Today at a glance. Used by `/argus today` and, with a greeting title, by the
+ * daily digest DM, so both always agree.
+ */
+export function todayEmbed(summary: TodaySummary, title = 'Today on Argus'): EmbedBuilder {
+  const day = DateTime.fromISO(summary.date).toFormat('cccc, LLLL d');
+  const embed = new EmbedBuilder().setTitle(title).setColor(ARGUS_COLOR).setDescription(`${day} · ${summary.timezone.replace(/_/g, ' ')}`);
+
+  embed.addFields({
+    name: summary.todayJobs.length ? `Today's jobs (${summary.todayJobs.length})` : "Today's jobs",
+    value: summary.todayJobs.length ? summary.todayJobs.slice(0, 6).map(shortJob).join('\n\n') : 'Nothing scheduled today.',
+  });
+  if (summary.upcomingJobs > 0) {
+    embed.addFields({ name: 'Coming up', value: `${plural(summary.upcomingJobs, 'more job')} in the next 7 days · \`/argus schedule\`` });
+  }
+  if (summary.awaitingReview > 0) {
+    embed.addFields({
+      name: 'Waiting on you',
+      value: `${plural(summary.awaitingReview, 'job')} ready for your review. Approve in Argus so your pilot gets paid.`,
+    });
+  }
+
+  const pilot = summary.pilot;
+  if (pilot) {
+    embed.addFields(
+      { name: 'Duty', value: pilot.onDuty ? '🟢 On duty' : '⚪ Off duty · `/argus duty`', inline: true },
+      {
+        name: 'Open missions',
+        value: pilot.openMissions
+          ? `${pilot.openMissions} · best ${formatUsd(pilot.bestPayoutCents)}${pilot.canAccept ? '' : ' (can’t accept yet)'}`
+          : 'None right now',
+        inline: true,
+      },
+      { name: 'Pending payouts', value: formatUsd(pilot.pendingPayoutCents), inline: true },
+    );
+    if (pilot.credentialAlerts.length > 0) {
+      embed
+        .setColor(pilot.credentialAlerts.some((c) => c.status !== 'approved' || (c.expiresAt !== null && c.expiresAt < summary.date)) ? Colors.danger : Colors.warning)
+        .addFields({
+          name: 'Documents needing attention',
+          value: pilot.credentialAlerts.map((c) => credentialLine(c, summary.date)).join('\n'),
+        });
+    }
+  }
+  return embed;
+}
+
+// ---------------------------------------------------------------- /argus schedule
+
+/** The next `days` days of jobs, grouped by date (jobs without a date are listed last). */
+export function scheduleEmbed(displayName: string, jobs: readonly JobSummary[], todayIso: string, days = 7): EmbedBuilder {
+  const end = DateTime.fromISO(todayIso).plus({ days: days - 1 }).toISODate()!;
+  const inRange = jobs
+    .filter((job) => job.scheduledFor === null || (job.scheduledFor >= todayIso && job.scheduledFor <= end))
+    .sort((a, b) => (a.scheduledFor ?? '9999').localeCompare(b.scheduledFor ?? '9999') || a.id - b.id);
+  const embed = new EmbedBuilder().setTitle(`Your next ${days} days: ${displayName}`).setColor(ARGUS_COLOR);
+  if (inRange.length === 0) return embed.setDescription('Nothing scheduled. Find work with `/argus missions`.');
+
+  const groups = new Map<string, JobSummary[]>();
+  for (const job of inRange) {
+    const key = job.scheduledFor ?? 'unscheduled';
+    groups.set(key, [...(groups.get(key) ?? []), job]);
+  }
+  for (const [key, list] of [...groups].slice(0, 25)) {
+    const name =
+      key === 'unscheduled'
+        ? 'Date not set'
+        : key === todayIso
+          ? `Today · ${formatDate(key, todayIso)}`
+          : key === DateTime.fromISO(todayIso).plus({ days: 1 }).toISODate()
+            ? `Tomorrow · ${formatDate(key, todayIso)}`
+            : formatDate(key, todayIso);
+    embed.addFields({ name, value: list.slice(0, 5).map(shortJob).join('\n\n').slice(0, 1024) });
+  }
+  return embed.setFooter({ text: 'Post field updates with /argus step' });
+}
+
+// ---------------------------------------------------------------- /argus stats
+
+function stars(rating: number): string {
+  const full = Math.round(rating);
+  return '★'.repeat(full) + '☆'.repeat(Math.max(0, 5 - full));
+}
+
+export function statsEmbed(displayName: string, stats: PilotStats): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setTitle(`Pilot stats: ${displayName}`)
+    .setColor(stats.paused ? Colors.warning : ARGUS_COLOR)
+    .addFields(
+      { name: 'Completed missions', value: String(stats.completedMissions), inline: true },
+      { name: 'Active now', value: String(stats.activeMissions), inline: true },
+      {
+        name: 'Rating',
+        value: stats.rating === null ? 'No reviews yet' : `${stats.rating.toFixed(2)} ${stars(stats.rating)} (${plural(stats.reviewCount, 'review')})`,
+        inline: true,
+      },
+      { name: 'Paid this month', value: formatUsd(stats.earnedThisMonthCents), inline: true },
+      { name: 'Paid this year', value: formatUsd(stats.earnedThisYearCents), inline: true },
+      { name: 'Standing', value: `${stats.tier ? TIER_LABELS[stats.tier] : 'Not rated yet'}${stats.paused ? ' (paused)' : ''}`, inline: true },
+    );
+  if (stats.nextTier) {
+    embed.addFields({
+      name: `Road to ${TIER_LABELS[stats.nextTier.tier]}`,
+      value: stats.nextTier.requirements.map((r) => `${r.met ? '✅' : '▫️'} ${r.label}: ${r.have} / ${r.need}`).join('\n'),
+    });
+  }
+  if (stats.recentReviews.length > 0) {
+    embed.addFields({
+      name: 'Latest reviews',
+      value: stats.recentReviews
+        .map((r) => `${stars(r.rating)} · ${formatDate(r.date)}${r.body ? `\n> ${r.body}` : ''}`)
+        .join('\n')
+        .slice(0, 1024),
+    });
+  }
+  return embed;
+}
+
+// ---------------------------------------------------------------- /argus duty
+
+export function dutyEmbed(onDuty: boolean, changed = false): EmbedBuilder {
+  return new EmbedBuilder()
+    .setTitle(onDuty ? '🟢 You are on duty' : '⚪ You are off duty')
+    .setColor(onDuty ? Colors.success : Colors.neutral)
+    .setDescription(
+      (changed ? 'Updated on Argus. ' : '') +
+        (onDuty
+          ? 'You can be offered and accept new missions within your hours and service area.'
+          : 'New missions are not offered to you. Jobs you already accepted are unaffected.'),
+    );
 }

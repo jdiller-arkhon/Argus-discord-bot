@@ -10,7 +10,7 @@ export function earningsSubcommand(context: ArgusContext): Subcommand {
     async execute(interaction) {
       const link = requirePilot(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const earnings = await callArgus(context, 'getEarnings', () => context.argus.getEarnings(link.argusUserId));
+      const earnings = await callArgus(context, 'getEarnings', () => context.argus.getEarnings(link.argusUserId), link.discordUserId);
       await interaction.editReply({ embeds: [earningsEmbed(link.displayName, earnings, context.now().toISODate()!)] });
     },
   };
@@ -23,7 +23,7 @@ export function credentialsSubcommand(context: ArgusContext): Subcommand {
     async execute(interaction) {
       const link = requirePilot(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const summary = await callArgus(context, 'getCredentials', () => context.argus.getCredentials(link.argusUserId));
+      const summary = await callArgus(context, 'getCredentials', () => context.argus.getCredentials(link.argusUserId), link.discordUserId);
       await interaction.editReply({ embeds: [credentialsEmbed(link.displayName, summary, context.now().toISODate()!)] });
     },
   };

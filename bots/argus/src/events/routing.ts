@@ -52,8 +52,13 @@ export function routeEvent(event: ArgusEvent, input: RoutingInput): EventRoute {
     if (!isAlertEnabled(new Set(settings.disabledAlerts), event.type)) {
       return { kind: 'drop', reason: 'alert turned off by user' };
     }
+    // Requested by the user on the website: no settings apply.
+    if (event.type === 'account.test') return { kind: 'dm', discordUserId };
     if (event.type === 'mission.posted') {
-      const { minPayoutCents, maxDistanceMi } = settings.missionAlerts;
+      const { minPayoutCents, maxDistanceMi, serviceTypes } = settings.missionAlerts;
+      if (serviceTypes.length > 0 && event.data.serviceId !== null && !serviceTypes.includes(event.data.serviceId)) {
+        return { kind: 'drop', reason: 'not one of the user’s services' };
+      }
       if (minPayoutCents !== null && event.data.payoutCents < minPayoutCents) {
         return { kind: 'drop', reason: 'below the user’s minimum payout' };
       }
@@ -62,7 +67,7 @@ export function routeEvent(event: ArgusEvent, input: RoutingInput): EventRoute {
       }
     }
     const urgentPasses = settings.quietHours.allowUrgent && URGENT_ALERTS.includes(event.type);
-    const quietUntil = urgentPasses ? null : quietHoursEnd(settings.quietHours, input.now);
+    const quietUntil = urgentPasses ? null : quietHoursEnd(settings.quietHours, settings.timezone, input.now);
     return quietUntil ? { kind: 'dm', discordUserId, deliverAt: quietUntil } : { kind: 'dm', discordUserId };
   }
 
@@ -80,9 +85,9 @@ function minutes(hhmm: string): number {
  * Handles overnight ranges (22:00–07:00) and DST via the user's time zone. An
  * unknown zone or equal start/end means "no quiet hours" rather than "always quiet".
  */
-export function quietHoursEnd(quiet: BotSettings['quietHours'], now: Date): Date | null {
+export function quietHoursEnd(quiet: BotSettings['quietHours'], timezone: string, now: Date): Date | null {
   if (!quiet.enabled || quiet.start === quiet.end) return null;
-  const local = DateTime.fromJSDate(now).setZone(quiet.timezone);
+  const local = DateTime.fromJSDate(now).setZone(timezone);
   if (!local.isValid) return null;
   const current = local.hour * 60 + local.minute;
   const start = minutes(quiet.start);

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { type FetchFn, HttpError, HttpNetworkError, HttpTimeoutError, requestJson } from '@arkhon/shared';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   type ArgusClient,
   ArgusAuthError,
@@ -17,6 +17,14 @@ import {
   acceptMissionResultSchema,
   type BotSettings,
   botSettingsSchema,
+  dutySchema,
+  type FieldStepResult,
+  fieldStepResultSchema,
+  type JobStep,
+  type PilotStats,
+  pilotStatsSchema,
+  type TodaySummary,
+  todaySummarySchema,
   type CredentialSummary,
   credentialSummarySchema,
   type Earnings,
@@ -120,6 +128,33 @@ export class HttpArgusClient implements ArgusClient {
     return this.call(botSettingsSchema, 'PUT', `${userPath(argusUserId)}/settings`, { body: settings, notFound: 'user' });
   }
 
+  async getToday(argusUserId: string): Promise<TodaySummary> {
+    return this.call(todaySummarySchema, 'GET', `${userPath(argusUserId)}/today`, { notFound: 'user' });
+  }
+
+  async getStats(argusUserId: string): Promise<PilotStats> {
+    return this.call(pilotStatsSchema, 'GET', `${userPath(argusUserId)}/stats`, { notFound: 'user' });
+  }
+
+  async getDuty(argusUserId: string): Promise<boolean> {
+    return (await this.call(dutySchema, 'GET', `${userPath(argusUserId)}/duty`, { notFound: 'user' })).onDuty;
+  }
+
+  async setDuty(argusUserId: string, onDuty: boolean): Promise<boolean> {
+    return (await this.call(dutySchema, 'PUT', `${userPath(argusUserId)}/duty`, { body: { onDuty }, notFound: 'user' })).onDuty;
+  }
+
+  async postJobStep(argusUserId: string, jobId: number, step: JobStep, note: string | null): Promise<FieldStepResult> {
+    return this.call(fieldStepResultSchema, 'POST', `${userPath(argusUserId)}/jobs/${jobId}/steps`, {
+      body: { step, note },
+      notFound: 'resource',
+    });
+  }
+
+  async unlinkAccount(argusUserId: string): Promise<void> {
+    await this.call(z.object({ unlinked: z.boolean() }), 'DELETE', `${userPath(argusUserId)}/link`, { notFound: 'user' });
+  }
+
   /**
    * A status endpoint that is down *is* the status: 5xx and timeouts after
    * retries are reported as an outage rather than thrown.
@@ -171,7 +206,7 @@ export class HttpArgusClient implements ArgusClient {
 
   private async call<S extends z.ZodTypeAny>(
     schema: S,
-    method: 'GET' | 'POST' | 'PUT',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     opts: { body?: unknown; notFound?: NotFoundMeaning },
   ): Promise<z.infer<S>> {

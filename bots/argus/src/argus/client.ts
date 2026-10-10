@@ -1,6 +1,10 @@
 import type {
   AcceptMissionResult,
   BotSettings,
+  FieldStepResult,
+  JobStep,
+  PilotStats,
+  TodaySummary,
   CredentialSummary,
   Earnings,
   JobDetail,
@@ -32,6 +36,17 @@ export interface ArgusClient {
   getBotSettings(argusUserId: string): Promise<BotSettings>;
   /** Replaces the user's bot settings; returns what Argus stored. */
   updateBotSettings(argusUserId: string, settings: BotSettings): Promise<BotSettings>;
+  /** Today's jobs and what needs attention, in the user's time zone (also the daily digest). */
+  getToday(argusUserId: string): Promise<TodaySummary>;
+  /** Pilot performance: work done, earnings, rating, reviews, next standing tier. */
+  getStats(argusUserId: string): Promise<PilotStats>;
+  getDuty(argusUserId: string): Promise<boolean>;
+  /** Goes on or off duty. A write; the bot confirms with a button first. */
+  setDuty(argusUserId: string, onDuty: boolean): Promise<boolean>;
+  /** Records a live field step on the pilot's job. A write; confirmed first. */
+  postJobStep(argusUserId: string, jobId: number, step: JobStep, note: string | null): Promise<FieldStepResult>;
+  /** Removes the Discord link on Argus, so it stops sending this user's events. */
+  unlinkAccount(argusUserId: string): Promise<void>;
 }
 
 export class ArgusError extends Error {

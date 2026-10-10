@@ -147,9 +147,11 @@ describe('HttpArgusClient', () => {
 
   it('reads and writes bot settings', async () => {
     const settings = {
+      timezone: 'America/Denver',
       disabledAlerts: ['job.step'],
-      missionAlerts: { minPayoutCents: 20_000, maxDistanceMi: null },
-      quietHours: { enabled: true, start: '22:00', end: '07:00', timezone: 'America/Denver', allowUrgent: true },
+      missionAlerts: { minPayoutCents: 20_000, maxDistanceMi: null, serviceTypes: ['roof'] },
+      quietHours: { enabled: true, start: '22:00', end: '07:00', allowUrgent: true },
+      digest: { enabled: true, hour: 7, skipEmpty: true },
     };
     const { argus, calls } = client([json(200, settings), json(200, settings)]);
     expect(await argus.getBotSettings('u_1')).toEqual(settings);
@@ -161,6 +163,33 @@ describe('HttpArgusClient', () => {
     const bad = client([json(422, { code: 'invalid_settings', message: 'quietHours.start: Use a 24-hour time like 22:00.' })]);
     const error = await bad.argus.updateBotSettings('u_1', settings as never).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ArgusRejectedError);
+  });
+
+  it('calls the pilot tool endpoints', async () => {
+    const today = { date: '2026-10-10', timezone: 'America/Denver', todayJobs: [], upcomingJobs: 0, awaitingReview: 0, pilot: null };
+    const { argus, calls } = client([
+      json(200, today),
+      json(200, { onDuty: false }),
+      json(200, { onDuty: true }),
+      json(200, { jobId: 42, step: 'on_site', at: '2026-10-10T15:00:00.000Z' }),
+      json(200, { unlinked: true }),
+    ]);
+    expect(await argus.getToday('u_1')).toEqual(today);
+    expect(await argus.getDuty('u_1')).toBe(false);
+    expect(await argus.setDuty('u_1', true)).toBe(true);
+    expect(await argus.postJobStep('u_1', 42, 'on_site', 'Gate code worked')).toMatchObject({ step: 'on_site' });
+    await argus.unlinkAccount('u_1');
+    expect(calls.map((c) => `${c.init.method} ${c.url.replace('https://argus.example.com/api/v1/users/u_1', '')}`)).toEqual([
+      'GET /today',
+      'GET /duty',
+      'PUT /duty',
+      'POST /jobs/42/steps',
+      'DELETE /link',
+    ]);
+    expect(JSON.parse(String(calls[3]!.init.body))).toEqual({ step: 'on_site', note: 'Gate code worked' });
+
+    const notYours = client([json(404, { code: 'not_found', message: "That job isn't yours." })]);
+    await expect(notYours.argus.postJobStep('u_1', 7, 'on_site', null)).rejects.toBeInstanceOf(ArgusNotFoundError);
   });
 
   it('reads /v1/status by default', async () => {

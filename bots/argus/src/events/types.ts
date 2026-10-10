@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  todaySummarySchema,
   credentialKindSchema,
   isoDate,
   jobStatusSchema,
@@ -17,6 +18,8 @@ export const eventDataSchemas = {
     missionId: id,
     title,
     serviceType: z.string().min(1).max(100),
+    /** Service id ("roof"), matched against the user's service filter. */
+    serviceId: z.string().max(40).nullable().default(null),
     locality: z.string().max(100),
     distanceMi: z.number().nonnegative().nullable().default(null),
     payoutCents: z.number().int().nonnegative(),
@@ -37,6 +40,10 @@ export const eventDataSchemas = {
     status: z.enum(['approved', 'rejected']),
     note: z.string().max(500).nullable().default(null),
   }),
+  /** "Send a test DM" on the website: always delivered, ignores settings. */
+  'account.test': z.object({ requestedAt: z.string().datetime({ offset: true }) }),
+  /** The daily digest, sent by Argus at the hour the user chose. */
+  'digest.daily': todaySummarySchema,
   'dispute.updated': z.object({
     disputeId: id,
     jobId: id.nullable(),
@@ -92,7 +99,7 @@ export function parseArgusEvent(raw: unknown): ArgusEvent {
  * `/argus alerts`. `service.status_changed` is never personal.
  */
 export interface PersonalAlert {
-  type: Exclude<ArgusEventType, 'service.status_changed'>;
+  type: Exclude<ArgusEventType, 'service.status_changed' | 'account.test' | 'digest.daily'>;
   label: string;
   description: string;
   /** Which linked accounts the alert applies to; admins see every alert. */

@@ -18,8 +18,9 @@ const routes = { 'mission.posted': CHANNEL };
 const NOON = new Date('2026-10-10T18:00:00Z');
 const settings = (patch: Partial<BotSettings> = {}): BotSettings => ({ ...DEFAULT_BOT_SETTINGS, ...patch });
 const owner = (patch: Partial<BotSettings> = {}) => ({ discordUserId: USER, settings: settings(patch) });
-const quiet = (patch: Partial<BotSettings['quietHours']> = {}): Partial<BotSettings> => ({
-  quietHours: { enabled: true, start: '22:00', end: '07:00', timezone: 'America/Denver', allowUrgent: true, ...patch },
+const quiet = (patch: Partial<BotSettings['quietHours']> = {}, timezone = 'America/Denver'): Partial<BotSettings> => ({
+  timezone,
+  quietHours: { enabled: true, start: '22:00', end: '07:00', allowUrgent: true, ...patch },
 });
 
 describe('routeEvent', () => {
@@ -63,15 +64,36 @@ describe('routeEvent', () => {
     // The sample mission pays $180 and is 12.4 mi away.
     const mission = sampleEvent('mission.posted', { userId: 'a' });
     const route = (minPayoutCents: number | null, maxDistanceMi: number | null) =>
-      routeEvent(mission, { routes, owner: owner({ missionAlerts: { minPayoutCents, maxDistanceMi } }), now: NOON });
+      routeEvent(mission, { routes, owner: owner({ missionAlerts: { minPayoutCents, maxDistanceMi, serviceTypes: [] } }), now: NOON });
     expect(route(18_000, 13).kind).toBe('dm');
     expect(route(18_001, null)).toEqual({ kind: 'drop', reason: 'below the user’s minimum payout' });
     expect(route(null, 12)).toEqual({ kind: 'drop', reason: 'outside the user’s distance limit' });
     // An unknown distance is not filtered out.
     const noDistance = { ...mission, data: { ...mission.data, distanceMi: null } } as typeof mission;
-    expect(routeEvent(noDistance, { routes, owner: owner({ missionAlerts: { minPayoutCents: null, maxDistanceMi: 5 } }), now: NOON }).kind).toBe('dm');
+    expect(routeEvent(noDistance, { routes, owner: owner({ missionAlerts: { minPayoutCents: null, maxDistanceMi: 5, serviceTypes: [] } }), now: NOON }).kind).toBe('dm');
     // Filters only apply to missions.
-    expect(routeEvent(sampleEvent('payout.paid', { userId: 'a' }), { routes, owner: owner({ missionAlerts: { minPayoutCents: 999_999, maxDistanceMi: 1 } }), now: NOON }).kind).toBe('dm');
+    expect(routeEvent(sampleEvent('payout.paid', { userId: 'a' }), { routes, owner: owner({ missionAlerts: { minPayoutCents: 999_999, maxDistanceMi: 1, serviceTypes: ['roof'] } }), now: NOON }).kind).toBe('dm');
+  });
+
+  it('filters missions by service and always delivers test DMs', () => {
+    const mission = sampleEvent('mission.posted', { userId: 'a' }); // serviceId 'realestate'
+    const only = (serviceTypes: string[]) =>
+      routeEvent(mission, { routes, owner: owner({ missionAlerts: { minPayoutCents: null, maxDistanceMi: null, serviceTypes } }), now: NOON });
+    expect(only([]).kind).toBe('dm');
+    expect(only(['realestate', 'roof']).kind).toBe('dm');
+    expect(only(['roof'])).toEqual({ kind: 'drop', reason: 'not one of the user’s services' });
+
+    const night = new Date('2026-10-11T05:00:00Z');
+    const everythingOff = owner({ ...quiet({ allowUrgent: false }), disabledAlerts: PERSONAL_ALERTS.map((a) => a.type) });
+    expect(routeEvent(sampleEvent('account.test', { userId: 'a' }), { routes, owner: everythingOff, now: night })).toEqual({
+      kind: 'dm',
+      discordUserId: USER,
+    });
+    // The digest is not a toggleable alert, but it does wait out quiet hours.
+    expect(routeEvent(sampleEvent('digest.daily', { userId: 'a' }), { routes, owner: everythingOff, now: night })).toMatchObject({
+      kind: 'dm',
+      deliverAt: new Date('2026-10-11T13:00:00Z'),
+    });
   });
 
   it('holds DMs during quiet hours until they end, letting urgent ones through', () => {
@@ -96,27 +118,27 @@ describe('routeEvent', () => {
 });
 
 describe('quietHoursEnd', () => {
-  const q = (patch: Partial<BotSettings['quietHours']> = {}) => ({ ...DEFAULT_BOT_SETTINGS.quietHours, enabled: true, ...patch });
+  const quietHours = (patch: Partial<BotSettings['quietHours']> = {}) => ({ ...DEFAULT_BOT_SETTINGS.quietHours, enabled: true, ...patch });
 
   it('handles overnight ranges on both sides of midnight', () => {
-    expect(quietHoursEnd(q(), new Date('2026-10-11T05:00:00Z'))).toEqual(new Date('2026-10-11T13:00:00Z')); // 23:00
-    expect(quietHoursEnd(q(), new Date('2026-10-11T11:00:00Z'))).toEqual(new Date('2026-10-11T13:00:00Z')); // 05:00
-    expect(quietHoursEnd(q(), new Date('2026-10-11T13:00:00Z'))).toBeNull(); // 07:00 exactly
-    expect(quietHoursEnd(q(), new Date('2026-10-11T03:59:00Z'))).toBeNull(); // 21:59
+    expect(quietHoursEnd(quietHours(), 'America/Denver', new Date('2026-10-11T05:00:00Z'))).toEqual(new Date('2026-10-11T13:00:00Z')); // 23:00
+    expect(quietHoursEnd(quietHours(), 'America/Denver', new Date('2026-10-11T11:00:00Z'))).toEqual(new Date('2026-10-11T13:00:00Z')); // 05:00
+    expect(quietHoursEnd(quietHours(), 'America/Denver', new Date('2026-10-11T13:00:00Z'))).toBeNull(); // 07:00 exactly
+    expect(quietHoursEnd(quietHours(), 'America/Denver', new Date('2026-10-11T03:59:00Z'))).toBeNull(); // 21:59
   });
 
   it('handles same-day ranges, other zones, and off/degenerate settings', () => {
-    const lunch = q({ start: '12:00', end: '13:00', timezone: 'America/New_York' });
-    expect(quietHoursEnd(lunch, new Date('2026-10-10T16:30:00Z'))).toEqual(new Date('2026-10-10T17:00:00Z'));
-    expect(quietHoursEnd(lunch, new Date('2026-10-10T17:30:00Z'))).toBeNull();
-    expect(quietHoursEnd({ ...lunch, enabled: false }, new Date('2026-10-10T16:30:00Z'))).toBeNull();
-    expect(quietHoursEnd(q({ start: '07:00', end: '07:00' }), NOON)).toBeNull();
-    expect(quietHoursEnd(q({ timezone: 'Not/AZone' }), NOON)).toBeNull();
+    const lunch = quietHours({ start: '12:00', end: '13:00' });
+    expect(quietHoursEnd(lunch, 'America/New_York', new Date('2026-10-10T16:30:00Z'))).toEqual(new Date('2026-10-10T17:00:00Z'));
+    expect(quietHoursEnd(lunch, 'America/New_York', new Date('2026-10-10T17:30:00Z'))).toBeNull();
+    expect(quietHoursEnd({ ...lunch, enabled: false }, 'America/New_York', new Date('2026-10-10T16:30:00Z'))).toBeNull();
+    expect(quietHoursEnd(quietHours({ start: '07:00', end: '07:00' }), 'America/Denver', NOON)).toBeNull();
+    expect(quietHoursEnd(quietHours(), 'Not/AZone', NOON)).toBeNull();
   });
 
   it('follows daylight saving time', () => {
     // 2026-11-01 is the fall-back night in Denver: 07:00 MST is 14:00 UTC.
-    expect(quietHoursEnd(q(), new Date('2026-11-01T06:00:00Z'))).toEqual(new Date('2026-11-01T14:00:00Z'));
+    expect(quietHoursEnd(quietHours(), 'America/Denver', new Date('2026-11-01T06:00:00Z'))).toEqual(new Date('2026-11-01T14:00:00Z'));
   });
 });
 
