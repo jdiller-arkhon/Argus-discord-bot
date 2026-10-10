@@ -149,20 +149,59 @@ describe('pilot commands', () => {
 });
 
 describe('/argus alerts', () => {
-  it('shows role-specific alerts and saves the selection', async () => {
-    const { run, context } = setup();
+  it('previews a selection and only saves it to Argus after Save', async () => {
+    const { run, mock } = setup();
     await linkAs(run, 'CLIENT-1234');
+    const argusUserId = `mock-client-${USER}`;
     const panel = await run(command('alerts'));
     expect(panel.ephemeral).toBe(true);
     const options = panel.lastComponents[0]!.options!.map((o) => o.value);
     expect(options).toContain('job.deliverables_ready');
     expect(options).not.toContain('payout.paid');
 
-    const saved = await run(select('argus-alerts:set', ['job.status_changed']));
+    const preview = await run(select('argus-alerts:pick', ['job.status_changed']));
+    expect(preview.lastEmbed?.description).toContain('Not saved yet');
+    expect(preview.lastEmbed?.description).toContain('🔕 **Live job progress**');
+    // Nothing changed on Argus yet.
+    expect((await mock.getBotSettings(argusUserId)).disabledAlerts).toEqual([]);
+    const save = preview.lastComponents.find((c) => c.custom_id?.startsWith('argus-alerts:save:'))!;
+
+    const saved = await run(button(save.custom_id!));
     expect(saved.lastEmbed?.description).toContain('✅ Saved.');
-    expect(saved.lastEmbed?.description).toContain('🔕 **Live job progress**');
-    expect(context.store.disabledAlerts(USER).has('job.step')).toBe(true);
-    expect(context.store.disabledAlerts(USER).has('job.status_changed')).toBe(false);
+    expect((await mock.getBotSettings(argusUserId)).disabledAlerts).toEqual(['job.step', 'job.deliverables_ready', 'dispute.updated']);
+  });
+
+  it('keeps quiet hours and mission filters set on the website when saving', async () => {
+    const { run, mock } = setup();
+    await linkAs(run, 'PILOT-1234');
+    const argusUserId = `mock-pilot-${USER}`;
+    await mock.updateBotSettings(argusUserId, {
+      disabledAlerts: [],
+      missionAlerts: { minPayoutCents: 20_000, maxDistanceMi: 30 },
+      quietHours: { enabled: true, start: '22:00', end: '06:30', timezone: 'America/Denver', allowUrgent: true },
+    });
+    const panel = await run(command('alerts'));
+    expect(panel.lastEmbed?.description).toContain('Mission alerts: only at least $200.00, within 30 mi.');
+    expect(panel.lastEmbed?.description).toContain('Quiet hours: 22:00–06:30 (America/Denver).');
+    expect(panel.lastEmbed?.description).toContain('https://arkhonindustries.com/app/pilot/discord');
+
+    const preview = await run(select('argus-alerts:pick', ['mission.posted']));
+    const save = preview.lastComponents.find((c) => c.custom_id?.startsWith('argus-alerts:save:'))!;
+    await run(button(save.custom_id!));
+    const stored = await mock.getBotSettings(argusUserId);
+    expect(stored.missionAlerts).toEqual({ minPayoutCents: 20_000, maxDistanceMi: 30 });
+    expect(stored.quietHours.end).toBe('06:30');
+    expect(stored.disabledAlerts).not.toContain('mission.posted');
+    expect(stored.disabledAlerts).toContain('payout.paid');
+  });
+
+  it('cancels without saving', async () => {
+    const { run, mock } = setup();
+    await linkAs(run, 'PILOT-1234');
+    await run(select('argus-alerts:pick', []));
+    const cancelled = await run(button('argus-alerts:cancel'));
+    expect(cancelled.lastEmbed?.description).not.toContain('Not saved yet');
+    expect((await mock.getBotSettings(`mock-pilot-${USER}`)).disabledAlerts).toEqual([]);
   });
 });
 

@@ -2,6 +2,15 @@ import type { Db } from '@arkhon/shared';
 import type { ArgusRole, ServiceState } from './argus/types.js';
 import type { StatusMemory } from './status/monitor.js';
 
+export interface HeldDm {
+  id: number;
+  discordUserId: string;
+  eventId: string;
+  /** Embed JSON as produced by EmbedBuilder.toJSON(). */
+  embed: unknown;
+  deliverAt: string;
+}
+
 export interface Link {
   discordUserId: string;
   argusUserId: string;
@@ -64,35 +73,52 @@ export class ArgusStore {
     })();
   }
 
-  /** Removes the link and the user's alert preferences. */
+  /** Removes the link and any DMs held for the user. */
   deleteLink(discordUserId: string): boolean {
     return this.db.transaction(() => this.deleteLinkData(discordUserId))();
   }
 
   private deleteLinkData(discordUserId: string): boolean {
     const removed = this.db.prepare('DELETE FROM links WHERE discord_user_id = ?').run(discordUserId).changes > 0;
-    this.db.prepare('DELETE FROM alert_prefs WHERE discord_user_id = ?').run(discordUserId);
+    this.db.prepare('DELETE FROM held_dms WHERE discord_user_id = ?').run(discordUserId);
     return removed;
   }
 
-  /** Alert types the user turned off. */
-  disabledAlerts(discordUserId: string): Set<string> {
-    const rows = this.db
-      .prepare('SELECT event_type FROM alert_prefs WHERE discord_user_id = ? AND enabled = 0')
-      .all(discordUserId) as { event_type: string }[];
-    return new Set(rows.map((row) => row.event_type));
+  /** Holds a DM until the user's quiet hours end. */
+  holdDm(dm: { discordUserId: string; eventId: string; embed: unknown; deliverAt: Date }, now: Date = new Date()): void {
+    this.db
+      .prepare('INSERT INTO held_dms (discord_user_id, event_id, embed_json, deliver_at, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(dm.discordUserId, dm.eventId, JSON.stringify(dm.embed), dm.deliverAt.toISOString(), now.toISOString());
   }
 
-  setAlertPreferences(discordUserId: string, preferences: Record<string, boolean>, now: Date = new Date()): void {
-    const upsert = this.db.prepare(
-      `INSERT INTO alert_prefs (discord_user_id, event_type, enabled, updated_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT (discord_user_id, event_type) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at`,
-    );
-    this.db.transaction(() => {
-      for (const [type, enabled] of Object.entries(preferences)) {
-        upsert.run(discordUserId, type, enabled ? 1 : 0, now.toISOString());
-      }
-    })();
+  /** Held DMs whose time has come, oldest first. */
+  dueHeldDms(now: Date = new Date(), limit = 50): HeldDm[] {
+    const rows = this.db
+      .prepare('SELECT * FROM held_dms WHERE deliver_at <= ? ORDER BY deliver_at, id LIMIT ?')
+      .all(now.toISOString(), limit) as {
+      id: number;
+      discord_user_id: string;
+      event_id: string;
+      embed_json: string;
+      deliver_at: string;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      discordUserId: row.discord_user_id,
+      eventId: row.event_id,
+      embed: JSON.parse(row.embed_json) as unknown,
+      deliverAt: row.deliver_at,
+    }));
+  }
+
+  deleteHeldDm(id: number): void {
+    this.db.prepare('DELETE FROM held_dms WHERE id = ?').run(id);
+  }
+
+  heldDmCount(discordUserId: string): number {
+    return (
+      this.db.prepare('SELECT COUNT(*) AS n FROM held_dms WHERE discord_user_id = ?').get(discordUserId) as { n: number }
+    ).n;
   }
 
   /** Records a webhook event ID; returns false if it was already processed. */

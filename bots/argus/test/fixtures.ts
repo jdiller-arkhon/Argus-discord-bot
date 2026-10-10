@@ -8,6 +8,7 @@ import { type ArgusConfig, DEFAULT_FAQ_PATH, loadArgusConfig } from '../src/conf
 import type { ArgusContext } from '../src/context.js';
 import { openArgusDatabase } from '../src/db.js';
 import { loadFaq } from '../src/faq.js';
+import { createSettingsSource } from '../src/settings.js';
 import { ArgusStore } from '../src/store.js';
 
 export const USER = '123456789012345678';
@@ -137,6 +138,7 @@ export function setup(options: { env?: Record<string, string>; certaName?: strin
     config,
     store: new ArgusStore(db),
     argus: mock,
+    settings: createSettingsSource(mock, silentLogger, 0),
     faq: loadFaq(DEFAULT_FAQ_PATH),
     certaLinks,
     tickets: null,

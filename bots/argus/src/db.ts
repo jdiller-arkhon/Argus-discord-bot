@@ -1,8 +1,9 @@
 import { type Db, jobRunsMigrationSql, type Migration, openDatabase, ticketsMigrationSql } from '@arkhon/shared';
 
 /**
- * The bot stores Discord/Argus identifiers, display names, roles, alert
- * preferences, processed webhook IDs, and the last announced service status.
+ * The bot stores Discord/Argus identifiers, display names, roles, processed
+ * webhook IDs, DMs held for quiet hours, and the last announced service status.
+ * Alert preferences live on Argus.
  * Never add addresses, payment details, or certificate numbers here.
  */
 export const argusMigrations: Migration[] = [
@@ -144,6 +145,33 @@ export const argusMigrations: Migration[] = [
         id INTEGER PRIMARY KEY CHECK (id = 1),
         state TEXT NOT NULL,
         summary TEXT,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 2,
+    name: 'settings-on-argus-and-held-dms',
+    sql: `
+      -- Alert preferences moved to Argus (discord_bot_settings), edited in the
+      -- pilot portal and with /argus alerts, so the bot no longer keeps a copy.
+      DROP TABLE alert_prefs;
+
+      -- DMs held during the recipient's quiet hours, sent once deliver_at passes.
+      CREATE TABLE held_dms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discord_user_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        embed_json TEXT NOT NULL,
+        deliver_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX held_dms_deliver_at ON held_dms (deliver_at);
+
+      -- Backs MockArgusClient.getBotSettings / updateBotSettings.
+      CREATE TABLE mock_bot_settings (
+        argus_user_id TEXT PRIMARY KEY,
+        settings_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
     `,

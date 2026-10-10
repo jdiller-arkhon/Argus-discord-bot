@@ -24,6 +24,7 @@ import {
 import { formatEvent } from '../src/events/format.js';
 import { sampleEvent } from '../src/events/samples.js';
 import { EVENT_TYPES } from '../src/events/types.js';
+import { DEFAULT_BOT_SETTINGS } from '../src/argus/types.js';
 import { TODAY } from './fixtures.js';
 
 const APP = 'https://arkhonindustries.com/app';
@@ -298,7 +299,7 @@ describe('help and account formatting', () => {
   });
 
   it('preselects enabled alerts in the alerts panel', () => {
-    const panel = alertsPanel('client', new Set(['job.step']));
+    const panel = alertsPanel('client', { ...DEFAULT_BOT_SETTINGS, disabledAlerts: ['job.step'] }, 'https://a.test/app');
     const menu = (panel.components?.[0] as { toJSON(): { components: { options: { value: string; default?: boolean }[] }[] } }).toJSON()
       .components[0]!;
     const defaults = Object.fromEntries(menu.options.map((o) => [o.value, o.default ?? false]));

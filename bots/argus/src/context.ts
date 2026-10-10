@@ -13,12 +13,15 @@ import {
 import type { CertaLinkLookup } from './certa-links.js';
 import type { ArgusConfig } from './config.js';
 import type { Faq } from './faq.js';
+import type { SettingsSource } from './settings.js';
 import type { ArgusStore, Link } from './store.js';
 
 export interface ArgusContext {
   config: ArgusConfig;
   store: ArgusStore;
   argus: ArgusClient;
+  /** The user's bot settings, stored on Argus (pilot portal → Discord bot). */
+  settings: SettingsSource;
   faq: Faq;
   certaLinks: CertaLinkLookup;
   /** Null when ARGUS_SUPPORT_CHANNEL_ID / ARGUS_STAFF_ROLE_ID are not set. */

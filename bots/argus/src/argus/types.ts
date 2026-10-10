@@ -197,3 +197,47 @@ export const credentialSummarySchema = z.object({
   ),
 });
 export type CredentialSummary = z.infer<typeof credentialSummarySchema>;
+
+// ---------------------------------------------------------------- bot settings
+
+/**
+ * How the user wants the bot to behave. Stored on Argus (edited in the pilot
+ * portal's Discord bot page and with `/argus alerts`), enforced here by
+ * `src/events/routing.ts`. Mirrors lib/platform/discord-bot/settings.ts on the
+ * platform.
+ */
+export const ALERT_TYPES = [
+  'mission.posted',
+  'job.status_changed',
+  'job.step',
+  'job.deliverables_ready',
+  'payout.paid',
+  'payout.failed',
+  'credential.expiring',
+  'credential.reviewed',
+  'dispute.updated',
+] as const;
+
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'expected HH:mm');
+
+export const botSettingsSchema = z.object({
+  disabledAlerts: z.array(z.enum(ALERT_TYPES)).max(ALERT_TYPES.length),
+  missionAlerts: z.object({
+    minPayoutCents: z.number().int().min(0).nullable(),
+    maxDistanceMi: z.number().int().min(1).nullable(),
+  }),
+  quietHours: z.object({
+    enabled: z.boolean(),
+    start: hhmm,
+    end: hhmm,
+    timezone: z.string().min(1).max(64),
+    allowUrgent: z.boolean(),
+  }),
+});
+export type BotSettings = z.infer<typeof botSettingsSchema>;
+
+export const DEFAULT_BOT_SETTINGS: BotSettings = {
+  disabledAlerts: [],
+  missionAlerts: { minPayoutCents: null, maxDistanceMi: null },
+  quietHours: { enabled: false, start: '22:00', end: '07:00', timezone: 'America/Denver', allowUrgent: true },
+};

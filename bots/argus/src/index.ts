@@ -14,6 +14,7 @@ import { createContext } from './app.js';
 import { createCommands, createComponents } from './commands/index.js';
 import { loadArgusConfig } from './config.js';
 import { createEventDispatcher } from './events/dispatch.js';
+import { startHeldDmDelivery } from './events/held.js';
 import { createJobs } from './jobs.js';
 import { createStatusMonitor, startStatusPolling } from './status/announce.js';
 import { createWebhookServer, WEBHOOK_PATH } from './webhook/server.js';
@@ -50,10 +51,12 @@ async function main(): Promise<void> {
   if (env.ARGUS_WEBHOOK_SECRET) {
     const dispatch = createEventDispatcher({
       store: context.store,
+      settings: context.settings,
       routes: env.ARGUS_EVENT_ROUTES,
       sendDm: (userId, embed) => sendDm(client, userId, { embeds: [embed] }, logger),
       postToChannel: (channelId, embed) => postEmbeds(client, channelId, [embed], logger),
       observeStatus: (status) => monitor.observe(status, 'webhook'),
+      now: () => new Date(),
       todayIso: () => context.now().toISODate()!,
       logger,
     });
@@ -74,6 +77,7 @@ async function main(): Promise<void> {
 
   let stopScheduler: (() => void) | undefined;
   let stopPolling: (() => void) | undefined;
+  let stopHeldDms: (() => void) | undefined;
   client.once(Events.ClientReady, async (ready) => {
     logger.info('Connected to Discord', { user: ready.user.tag, guilds: ready.guilds.cache.size });
     if (context.tickets) logger.info('Loaded active tickets', { count: context.tickets.loadActiveChannels() });
@@ -94,12 +98,19 @@ async function main(): Promise<void> {
       logger,
     });
     stopPolling = startStatusPolling(context, monitor);
+    // DMs held for users' quiet hours go out once those hours end.
+    stopHeldDms = startHeldDmDelivery(
+      context.store,
+      (userId, embed) => sendDm(client, userId, { embeds: [embed] }, logger),
+      logger,
+    );
   });
 
   const shutdown = async (signal: string) => {
     logger.info('Shutting down', { signal });
     stopScheduler?.();
     stopPolling?.();
+    stopHeldDms?.();
     server?.close();
     await client.destroy();
     context.store.db.close();

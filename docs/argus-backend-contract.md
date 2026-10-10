@@ -1,14 +1,32 @@
 # What the Argus platform must expose for the bot
 
-The bot talks to Argus only through `ArgusClient` (`bots/argus/src/argus/client.ts`). Today the
-platform (the `Arkhon-Industries` repo) has none of these endpoints. Its only external surfaces
-are the public `GET /api/health` probe and the inbound Stripe webhook. This document is the
-contract to build. The zod schemas in `bots/argus/src/argus/types.ts` and
+The bot talks to Argus only through `ArgusClient` (`bots/argus/src/argus/client.ts`). The platform
+side of this contract is implemented in the `Arkhon-Industries` repo on branch
+`claude/discord-bot-api`:
+
+| Piece | Where |
+| --- | --- |
+| Routes | `app/api/bot/v1/**` |
+| Logic | `lib/platform/discord-bot/` |
+| Website mission rules, shared by the bot | `lib/platform/mission-claim.ts` |
+| Link codes | Settings → Discord |
+| Bot settings dashboard | Pilot portal → Discord Bot (`/app/pilot/discord`) |
+| Migration | `drizzle/add-discord-bot.sql`. Apply it before merging. |
+
+The platform needs these environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `DISCORD_BOT_API_TOKEN` | Same value as the bot's `ARGUS_API_TOKEN` |
+| `DISCORD_BOT_WEBHOOK_URL` | The bot's `https://…/webhooks/argus` |
+| `DISCORD_BOT_WEBHOOK_SECRET` | Same value as the bot's `ARGUS_WEBHOOK_SECRET` |
+
+Point the bot's `ARGUS_API_BASE_URL` at `https://arkhonindustries.com/api/bot`. The zod schemas in `bots/argus/src/argus/types.ts` and
 `bots/argus/src/events/types.ts` are the source of truth for every field.
 
 ## Conventions
 
-- Base URL: `ARGUS_API_BASE_URL`, e.g. `https://arkhonindustries.com/api/bot`.
+- Base URL: `ARGUS_API_BASE_URL` = `https://arkhonindustries.com/api/bot` (routes live under `/api/bot/v1`).
 - Auth: `Authorization: Bearer <ARGUS_API_TOKEN>`. This is a single bot service token, not a user session.
   Every `/v1/users/:argusUserId/...` route must check that the user exists and act as that user,
   using the same scoping as the web app (`clientProjectScope()` for clients, assignment for pilots).
@@ -35,17 +53,32 @@ send these in the first place. Use `locality` ("City, ST") for places.
 Body `{ code, discordUserId }`, response `{ argusUserId, displayName, role }`. `role` is `client`,
 `pilot`, or `admin`, from `user.role`.
 
-Argus needs a **Settings → Discord** page that issues one-time codes. Codes should be single-use,
+**Settings → Discord** (and the pilot portal's Discord Bot page) issues one-time codes. Codes should be single-use,
 expire in about 10 minutes, and be 6–32 characters of `A-Z 0-9 -`. Redeeming stores the
 Discord ID on the user so that events can carry `userId`.
+
+### `GET /v1/users/:id/settings` and `PUT /v1/users/:id/settings`
+
+The user's bot settings, as one document. Users edit it in the pilot portal (Discord Bot page) and with
+`/argus alerts`. The bot enforces it when delivering events.
+
+| Field | Values |
+| --- | --- |
+| `disabledAlerts` | Personal alert types turned off. Anything not listed is on. |
+| `missionAlerts` | `{ minPayoutCents, maxDistanceMi }`. Each is `null` for no limit. |
+| `quietHours` | `{ enabled, start: "HH:mm", end: "HH:mm", timezone, allowUrgent }` |
+
+`PUT` validates with the same rules as the website form and returns 422 `invalid_settings` with a
+message on bad input.
 
 ### `GET /v1/status`
 
 Response `{ state, summary, components: [{ name, state }], updatedAt }`, where `state` is one of
 `operational | maintenance | degraded | outage`.
 
-Until this exists, set `ARGUS_STATUS_URL=https://arkhonindustries.com/api/health` and the bot maps
-`{ ok: true }` to operational and anything else (including a 503 or a timeout) to outage.
+The platform answers with the same database check as `/api/health`. Alternatively, set
+`ARGUS_STATUS_URL=https://arkhonindustries.com/api/health`; the bot maps `{ ok: true }` to
+operational and anything else (including a 503 or a timeout) to outage.
 
 ### `GET /v1/users/:id/jobs?scope=active|recent`
 

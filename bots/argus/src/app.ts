@@ -7,6 +7,7 @@ import type { ArgusContext } from './context.js';
 import { openArgusDatabase } from './db.js';
 import { ARGUS_COLOR } from './embeds.js';
 import { loadFaq } from './faq.js';
+import { createSettingsSource } from './settings.js';
 import { ArgusStore } from './store.js';
 
 /** Wires config, storage, the Argus client, the FAQ, and the shared ticket flow into one context. */
@@ -29,10 +30,12 @@ export function createContext(config: ArgusConfig, logger: Logger): ArgusContext
       })
     : null;
 
+  const argus = createArgusClient(config, db);
   return {
     config,
     store: new ArgusStore(db),
-    argus: createArgusClient(config, db),
+    argus,
+    settings: createSettingsSource(argus, logger),
     faq: loadFaq(config.faqPath),
     certaLinks: createCertaLinkLookup(config.env.CERTA_DB_PATH, logger),
     tickets,

@@ -54,8 +54,9 @@ Run `pnpm typecheck && pnpm test` before committing.
 - **Replies** that are personal (account data, errors) are ephemeral. Defer before any network
   call that can exceed Discord's 3 second window. `/argus status` is the only public reply.
 - **Writes to Argus need a confirmation button.** Anything that changes data in Argus shows the
-  details with Confirm/Cancel first and removes the buttons before calling the API (see
-  `commands/missions.ts`). Today the only write is accepting a mission.
+  details with Confirm/Cancel (or Save/Cancel) first and removes the buttons before calling the API
+  (see `commands/missions.ts`). The writes are accepting a mission and saving alert choices from
+  `/argus alerts`.
 - **Storage** is SQLite via better-sqlite3 (`openDatabase(path, migrations)`). Migrations are
   append-only and numbered from 1. Never edit a shipped migration.
 - **Outbound HTTP** goes through `request`/`requestJson` (per-attempt timeout, exponential
@@ -89,7 +90,7 @@ pilots also use Certa, Arkhon's flight logbook, to log the flights they fly for 
 | `/argus missions` | Pilot: open missions; pick one → confirm → accept |
 | `/argus earnings` | Pilot: pending, instant-payout-eligible, paid totals, recent payouts |
 | `/argus credentials` | Pilot: verification, standing tier, credential status and expiry |
-| `/argus alerts` | Multi-select of personal DM alerts, filtered to the account's role |
+| `/argus alerts` | Pick personal DM alerts (filtered to the account's role), then Save to Argus |
 | `/argus help [topic]` | FAQ from `faq.json` plus "Open an Argus ticket" (or a support link) |
 
 Account commands reply with `NOT_LINKED_MESSAGE` when the user is not linked. Pilot commands reply
@@ -126,7 +127,8 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
   - The mission board refills when it runs empty.
 - All request and response types are zod schemas in `src/argus/types.ts`. Unknown response keys
   are stripped.
-- `docs/argus-backend-contract.md` is the contract the platform has to implement.
+- `docs/argus-backend-contract.md` is the contract. The platform implements it in
+  `Arkhon-Industries` (`app/api/bot/v1`, `lib/platform/discord-bot/`) on branch `claude/discord-bot-api`.
 
 ### Event alerts
 
@@ -137,8 +139,16 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
   - `service.status_changed` goes to the status monitor.
   - An event with a `userId` is DMed to the linked owner unless they muted that type. It is never posted to a channel, because it is about their jobs, money, or credentials.
   - A broadcast (`userId: null`) goes to the `ARGUS_EVENT_ROUTES` channel for its type, or is dropped.
-- **Preferences** store only opt-outs (`alert_prefs`), so new alert types default to on.
-  `alertsForRole()` limits the menu to alerts that apply to the account.
+- **Bot settings live on Argus**, not in the bot. Users edit them in the pilot portal (Arkhon
+  website → Discord Bot, `/app/pilot/discord`) and with `/argus alerts`. They are read with
+  `ArgusClient.getBotSettings` through `src/settings.ts`, which caches them for 60s and falls back to
+  defaults if Argus is unreachable, so alerts keep flowing.
+  - `disabledAlerts`: alert types turned off. New types default to on.
+  - `missionAlerts`: minimum payout and maximum distance for `mission.posted` DMs. Missions with an unknown distance still pass.
+  - `quietHours`: start, end, time zone, and `allowUrgent`. Overnight ranges and DST are handled. During quiet hours, DMs are held in `held_dms` and sent by `startHeldDmDelivery` (every minute) once quiet hours end. `payout.failed` and `dispute.updated` skip the hold when `allowUrgent` is on.
+- `alertsForRole()` limits the alerts menu to alerts that apply to the account. `/argus alerts`
+  previews a selection and saves it only on **Save**; the Save button carries the choice as a
+  bitmask, and saving re-reads the settings so filters and quiet hours set on the website are kept.
 
 ### Service status
 
@@ -166,8 +176,8 @@ Commands depend only on the `ArgusClient` interface (`src/argus/client.ts`).
 
 ### Data rules
 
-- The bot DB holds Discord ID, Argus user ID, display name, role, alert opt-outs, processed
-  event IDs, status memory, and tickets. **Never store** addresses, coordinates, payment details,
+- The bot DB holds Discord ID, Argus user ID, display name, role, processed event IDs, DMs held
+  for quiet hours (deleted on delivery or unlink), status memory, and tickets. Alert settings are on Argus. **Never store** addresses, coordinates, payment details,
   emails, or certificate, policy, or registration numbers.
 - Places are shown as `locality` ("City, ST") only.
 - The Certa link check (`CERTA_DB_PATH`) opens the Certa bot's database read-only per lookup and

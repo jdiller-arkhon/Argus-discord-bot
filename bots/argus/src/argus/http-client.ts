@@ -15,6 +15,8 @@ import {
 import {
   type AcceptMissionResult,
   acceptMissionResultSchema,
+  type BotSettings,
+  botSettingsSchema,
   type CredentialSummary,
   credentialSummarySchema,
   type Earnings,
@@ -110,6 +112,14 @@ export class HttpArgusClient implements ArgusClient {
     return this.call(credentialSummarySchema, 'GET', `${userPath(argusUserId)}/credentials`, { notFound: 'user' });
   }
 
+  async getBotSettings(argusUserId: string): Promise<BotSettings> {
+    return this.call(botSettingsSchema, 'GET', `${userPath(argusUserId)}/settings`, { notFound: 'user' });
+  }
+
+  async updateBotSettings(argusUserId: string, settings: BotSettings): Promise<BotSettings> {
+    return this.call(botSettingsSchema, 'PUT', `${userPath(argusUserId)}/settings`, { body: settings, notFound: 'user' });
+  }
+
   /**
    * A status endpoint that is down *is* the status: 5xx and timeouts after
    * retries are reported as an outage rather than thrown.
@@ -161,7 +171,7 @@ export class HttpArgusClient implements ArgusClient {
 
   private async call<S extends z.ZodTypeAny>(
     schema: S,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
     path: string,
     opts: { body?: unknown; notFound?: NotFoundMeaning },
   ): Promise<z.infer<S>> {

@@ -145,6 +145,24 @@ describe('HttpArgusClient', () => {
     await expect(textClient.getEarnings('u_1')).rejects.toBeInstanceOf(ArgusResponseError);
   });
 
+  it('reads and writes bot settings', async () => {
+    const settings = {
+      disabledAlerts: ['job.step'],
+      missionAlerts: { minPayoutCents: 20_000, maxDistanceMi: null },
+      quietHours: { enabled: true, start: '22:00', end: '07:00', timezone: 'America/Denver', allowUrgent: true },
+    };
+    const { argus, calls } = client([json(200, settings), json(200, settings)]);
+    expect(await argus.getBotSettings('u_1')).toEqual(settings);
+    expect(calls[0]!.url).toBe('https://argus.example.com/api/v1/users/u_1/settings');
+    expect(await argus.updateBotSettings('u_1', settings as never)).toEqual(settings);
+    expect(calls[1]!.init.method).toBe('PUT');
+    expect(JSON.parse(String(calls[1]!.init.body))).toEqual(settings);
+
+    const bad = client([json(422, { code: 'invalid_settings', message: 'quietHours.start: Use a 24-hour time like 22:00.' })]);
+    const error = await bad.argus.updateBotSettings('u_1', settings as never).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ArgusRejectedError);
+  });
+
   it('reads /v1/status by default', async () => {
     const body = { state: 'degraded', summary: 'Slow uploads', components: [], updatedAt: '2026-10-10T17:00:00Z' };
     const { argus, calls } = client([json(200, body)]);

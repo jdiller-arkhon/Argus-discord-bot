@@ -1,36 +1,93 @@
-import { type ComponentHandler, customId } from '@arkhon/shared';
+import { type ComponentHandler, customId, UserFacingError } from '@arkhon/shared';
 import {
   ActionRowBuilder,
   type BaseMessageOptions,
+  ButtonBuilder,
+  ButtonStyle,
   EmbedBuilder,
   MessageFlags,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
 } from 'discord.js';
-import type { ArgusRole } from '../argus/types.js';
-import { type ArgusContext, requireLink } from '../context.js';
-import { ARGUS_COLOR } from '../embeds.js';
-import { alertPreferencesFromSelection, enabledAlerts } from '../events/routing.js';
-import { alertsForRole } from '../events/types.js';
+import type { ArgusRole, BotSettings } from '../argus/types.js';
+import { type ArgusContext, callArgus, requireLink } from '../context.js';
+import { ARGUS_COLOR, formatUsd } from '../embeds.js';
+import { disabledAfterSelection, enabledAlerts } from '../events/routing.js';
+import { alertsForRole, isPersonalAlertType, PERSONAL_ALERTS, type PersonalAlertType } from '../events/types.js';
 import type { Subcommand } from './types.js';
 
 export const ALERTS_PREFIX = 'argus-alerts';
 
-/** The alert preferences panel: current state plus a multi-select to change it. */
-export function alertsPanel(role: ArgusRole, disabled: ReadonlySet<string>, saved = false): BaseMessageOptions {
+/** Disabled alert types <-> a short hex bitmask over PERSONAL_ALERTS, so a Save button can carry the choice. */
+export function encodeDisabled(disabled: readonly string[]): string {
+  let mask = 0;
+  PERSONAL_ALERTS.forEach((alert, i) => {
+    if (disabled.includes(alert.type)) mask |= 1 << i;
+  });
+  return mask.toString(16);
+}
+
+export function decodeDisabled(hex: string): PersonalAlertType[] {
+  if (!/^[0-9a-f]{1,4}$/.test(hex)) throw new UserFacingError('That button is no longer valid. Run `/argus alerts` again.');
+  const mask = parseInt(hex, 16);
+  return PERSONAL_ALERTS.filter((_, i) => (mask & (1 << i)) !== 0).map((alert) => alert.type);
+}
+
+/** Where pilots find the rest of the bot settings. */
+export function dashboardUrl(appUrl: string): string {
+  return `${appUrl.replace(/\/+$/, '')}/pilot/discord`;
+}
+
+function otherSettingsLine(role: ArgusRole, settings: BotSettings, appUrl: string): string {
+  const parts: string[] = [];
+  const { minPayoutCents, maxDistanceMi } = settings.missionAlerts;
+  if (role !== 'client' && (minPayoutCents !== null || maxDistanceMi !== null)) {
+    const filters = [
+      minPayoutCents !== null ? `at least ${formatUsd(minPayoutCents)}` : null,
+      maxDistanceMi !== null ? `within ${maxDistanceMi} mi` : null,
+    ].filter(Boolean);
+    parts.push(`Mission alerts: only ${filters.join(', ')}.`);
+  }
+  if (settings.quietHours.enabled) {
+    parts.push(
+      `Quiet hours: ${settings.quietHours.start}–${settings.quietHours.end} (${settings.quietHours.timezone.replace(/_/g, ' ')}).`,
+    );
+  }
+  const where =
+    role === 'client'
+      ? 'Change quiet hours and filters in Argus.'
+      : `Mission filters and quiet hours: ${dashboardUrl(appUrl)}`;
+  return [...parts, where].join('\n');
+}
+
+/**
+ * The alerts panel. `pending` is an unsaved selection: it is previewed with
+ * Save / Cancel, because saving changes the user's settings on Argus.
+ */
+export function alertsPanel(
+  role: ArgusRole,
+  settings: BotSettings,
+  appUrl: string,
+  state: { pending?: readonly string[]; saved?: boolean } = {},
+): BaseMessageOptions {
   const alerts = alertsForRole(role);
+  const disabled = new Set<string>(state.pending ?? settings.disabledAlerts);
   const on = new Set(enabledAlerts(disabled, alerts));
+  const intro = state.pending
+    ? '**Not saved yet.** Press Save to update your settings on Argus.'
+    : `${state.saved ? '✅ Saved. ' : ''}Select the alerts you want as DMs; anything left unselected is off.`;
   const embed = new EmbedBuilder()
     .setTitle('Argus DM alerts')
     .setColor(ARGUS_COLOR)
     .setDescription(
-      `${saved ? '✅ Saved. ' : ''}Select the alerts you want as DMs; anything left unselected is off.\n\n` +
-        alerts.map((alert) => `${on.has(alert.type) ? '🔔' : '🔕'} **${alert.label}**: ${alert.description}`).join('\n'),
+      `${intro}\n\n` +
+        alerts.map((alert) => `${on.has(alert.type) ? '🔔' : '🔕'} **${alert.label}**: ${alert.description}`).join('\n') +
+        `\n\n${otherSettingsLine(role, settings, appUrl)}`,
     )
     .setFooter({ text: 'Service status updates post in the status channel, not by DM.' });
 
   const menu = new StringSelectMenuBuilder()
-    .setCustomId(customId(ALERTS_PREFIX, 'set'))
+    .setCustomId(customId(ALERTS_PREFIX, 'pick'))
     .setPlaceholder('No alerts (all off)')
     .setMinValues(0)
     .setMaxValues(alerts.length)
@@ -43,7 +100,21 @@ export function alertsPanel(role: ArgusRole, disabled: ReadonlySet<string>, save
           .setDefault(on.has(alert.type)),
       ),
     );
-  return { embeds: [embed], components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu)] };
+  const components: ActionRowBuilder<StringSelectMenuBuilder | ButtonBuilder>[] = [
+    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu),
+  ];
+  if (state.pending) {
+    components.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(customId(ALERTS_PREFIX, 'save', encodeDisabled(state.pending)))
+          .setLabel('Save')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(customId(ALERTS_PREFIX, 'cancel')).setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+      ),
+    );
+  }
+  return { embeds: [embed], components };
 }
 
 export function alertsSubcommand(context: ArgusContext): Subcommand {
@@ -52,24 +123,43 @@ export function alertsSubcommand(context: ArgusContext): Subcommand {
     build: (sub) => sub.setName('alerts').setDescription('Choose which Argus updates you get by DM'),
     async execute(interaction) {
       const link = requireLink(context, interaction.user.id);
-      await interaction.reply({
-        ...alertsPanel(link.role, context.store.disabledAlerts(link.discordUserId)),
-        flags: MessageFlags.Ephemeral,
-      });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const settings = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId));
+      await interaction.editReply(alertsPanel(link.role, settings, context.config.env.ARGUS_APP_URL));
     },
   };
 }
 
 export function alertsComponent(context: ArgusContext): ComponentHandler {
+  const appUrl = () => context.config.env.ARGUS_APP_URL;
   return {
     prefix: ALERTS_PREFIX,
+
     async handleSelect(interaction, [action]) {
-      if (action !== 'set') return;
+      if (action !== 'pick') return;
       const link = requireLink(context, interaction.user.id);
-      const preferences = alertPreferencesFromSelection(interaction.values, alertsForRole(link.role));
-      context.store.setAlertPreferences(link.discordUserId, preferences);
-      context.logger.info('Alert preferences updated', { discordUserId: link.discordUserId, enabled: interaction.values });
-      await interaction.update(alertsPanel(link.role, context.store.disabledAlerts(link.discordUserId), true));
+      const settings = await context.settings.get(link.argusUserId);
+      const pending = disabledAfterSelection(settings.disabledAlerts, interaction.values, alertsForRole(link.role));
+      await interaction.update(alertsPanel(link.role, settings, appUrl(), { pending }));
+    },
+
+    async handleButton(interaction, [action, arg]) {
+      const link = requireLink(context, interaction.user.id);
+      if (action === 'cancel') {
+        const settings = await context.settings.get(link.argusUserId);
+        await interaction.update(alertsPanel(link.role, settings, appUrl()));
+        return;
+      }
+      if (action !== 'save' || arg === undefined) return;
+      const disabledAlerts = decodeDisabled(arg).filter(isPersonalAlertType);
+      await interaction.deferUpdate();
+      // Re-read so a quiet-hours change made on the website meanwhile is kept.
+      const current = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId));
+      const saved = await callArgus(context, 'updateBotSettings', () =>
+        context.settings.update(link.argusUserId, { ...current, disabledAlerts }),
+      );
+      context.logger.info('Alert preferences updated', { discordUserId: link.discordUserId, disabledAlerts });
+      await interaction.editReply(alertsPanel(link.role, saved, appUrl(), { saved: true }));
     },
   };
 }

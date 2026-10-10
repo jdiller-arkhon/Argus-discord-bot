@@ -10,6 +10,9 @@ import {
 import {
   type AcceptMissionResult,
   type ArgusRole,
+  type BotSettings,
+  botSettingsSchema,
+  DEFAULT_BOT_SETTINGS,
   type CredentialSummary,
   type Earnings,
   type JobDetail,
@@ -301,6 +304,29 @@ export class MockArgusClient implements ArgusClient {
       paused: user.paused === 1,
       credentials: rows,
     };
+  }
+
+  async getBotSettings(argusUserId: string): Promise<BotSettings> {
+    this.requireUser(argusUserId);
+    const row = this.db.prepare('SELECT settings_json FROM mock_bot_settings WHERE argus_user_id = ?').get(argusUserId) as
+      | { settings_json: string }
+      | undefined;
+    if (!row) return DEFAULT_BOT_SETTINGS;
+    const parsed = botSettingsSchema.safeParse(JSON.parse(row.settings_json));
+    return parsed.success ? parsed.data : DEFAULT_BOT_SETTINGS;
+  }
+
+  async updateBotSettings(argusUserId: string, settings: BotSettings): Promise<BotSettings> {
+    this.requireUser(argusUserId);
+    const parsed = botSettingsSchema.safeParse(settings);
+    if (!parsed.success) throw new ArgusRejectedError('Invalid settings', parsed.error.issues[0]?.message);
+    this.db
+      .prepare(
+        `INSERT INTO mock_bot_settings (argus_user_id, settings_json, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (argus_user_id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at`,
+      )
+      .run(argusUserId, JSON.stringify(parsed.data), this.now().toISO());
+    return parsed.data;
   }
 
   /** Dev helper (`pnpm argus:mock-status`): sets what getServiceStatus reports. */

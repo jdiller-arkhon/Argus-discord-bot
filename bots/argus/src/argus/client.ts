@@ -1,5 +1,6 @@
 import type {
   AcceptMissionResult,
+  BotSettings,
   CredentialSummary,
   Earnings,
   JobDetail,
@@ -27,6 +28,10 @@ export interface ArgusClient {
   acceptMission(argusUserId: string, missionId: number): Promise<AcceptMissionResult>;
   getEarnings(argusUserId: string): Promise<Earnings>;
   getCredentials(argusUserId: string): Promise<CredentialSummary>;
+  /** The user's bot settings (alert types, mission alert filters, quiet hours). */
+  getBotSettings(argusUserId: string): Promise<BotSettings>;
+  /** Replaces the user's bot settings; returns what Argus stored. */
+  updateBotSettings(argusUserId: string, settings: BotSettings): Promise<BotSettings>;
 }
 
 export class ArgusError extends Error {

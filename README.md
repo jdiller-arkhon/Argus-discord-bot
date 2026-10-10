@@ -12,7 +12,14 @@ and follows the same conventions (see `CLAUDE.md`).
 - **Status:** `/argus status`, plus automatic posts to `#argus-status` when Argus changes state.
   The role is pinged only for degraded or outage.
 - **Event alerts:** a signed `POST /webhooks/argus` endpoint. Personal events are DMed to the linked
-  user, and broadcasts go to configured channels. Users choose their DMs with `/argus alerts`.
+  user, and broadcasts go to configured channels.
+- **Bot settings on the Arkhon website:** pilots open **Pilot portal → Discord Bot** to link Discord and
+  choose:
+  - which DM alerts they get;
+  - mission alert filters: minimum payout and maximum distance;
+  - quiet hours. DMs are held until quiet hours end, and urgent ones can come through anyway.
+
+  `/argus alerts` edits the same alert list from Discord.
 - **Product commands:** `/argus jobs`, `/argus job id:<n>`, `/argus missions` (accept with
   confirmation), `/argus earnings`, and `/argus credentials`.
 - **Support:** `/argus help` shows FAQ answers from `bots/argus/faq.json` and a button that opens a
@@ -75,7 +82,7 @@ Every variable is documented in `.env.example`. Blank values use the default.
 | `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID` | required | Bot credentials |
 | `DISCORD_GUILD_ID` | | Register commands to one guild |
 | `ARGUS_CLIENT` | `http` | `http` or `mock` |
-| `ARGUS_API_BASE_URL`, `ARGUS_API_TOKEN` | required for `http` | Argus bot API |
+| `ARGUS_API_BASE_URL`, `ARGUS_API_TOKEN` | required for `http` | Argus bot API (`https://arkhonindustries.com/api/bot`) |
 | `ARGUS_STATUS_URL` | | Separate status endpoint; the platform's `/api/health` works |
 | `ARGUS_APP_URL` | `https://arkhonindustries.com/app` | Links in job embeds |
 | `ARGUS_DB_PATH` | `./data/argus.sqlite` | Bot database |
@@ -98,9 +105,21 @@ Every variable is documented in `.env.example`. Blank values use the default.
 
 ## Connecting the real Argus API
 
-The Argus platform does not expose a bot API yet. `docs/argus-backend-contract.md` lists every
-endpoint, field, error code, and webhook event the bot expects. Until it ships, run with
-`ARGUS_CLIENT=mock`, or point `ARGUS_STATUS_URL` at the existing health probe to get real status.
+The platform serves the bot API from the `Arkhon-Industries` repo (branch `claude/discord-bot-api`).
+`docs/argus-backend-contract.md` lists every endpoint, field, error code and event. To go live:
+
+1. Apply `drizzle/add-discord-bot.sql` to the platform database, then deploy that branch.
+2. Generate two secrets, for example with `openssl rand -hex 32`. Set them on both sides:
+
+   | Platform | Bot |
+   | --- | --- |
+   | `DISCORD_BOT_API_TOKEN` | `ARGUS_API_TOKEN` |
+   | `DISCORD_BOT_WEBHOOK_SECRET` | `ARGUS_WEBHOOK_SECRET` |
+
+3. Set the URLs on each side:
+   - Platform: `DISCORD_BOT_WEBHOOK_URL=https://<bot host>/webhooks/argus`.
+   - Bot: `ARGUS_CLIENT=http` and `ARGUS_API_BASE_URL=https://arkhonindustries.com/api/bot`.
+4. Users link from **Settings → Discord** or **Pilot portal → Discord Bot** on the website.
 
 ## Development
 
