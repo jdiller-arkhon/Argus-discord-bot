@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 async function start(options: { ready?: boolean; dispatch?: (event: ArgusEvent) => Promise<DispatchResult> } = {}) {
-  const store = new ArgusStore(openArgusDatabase(':memory:'));
+  const store = new ArgusStore(await openArgusDatabase({ path: ':memory:' }));
   const dispatched: ArgusEvent[] = [];
   const server = createWebhookServer({
     secret: SECRET,
@@ -106,7 +106,7 @@ describe('Argus webhook server', () => {
     const { post, store } = await start({ ready: false });
     const event = sampleEvent('payout.paid');
     expect((await post(JSON.stringify(event))).status).toBe(503);
-    expect(store.claimEvent(event.id, event.type)).toBe(true);
+    expect(await store.claimEvent(event.id, event.type)).toBe(true);
   });
 
   it('serves health and rejects other routes and methods', async () => {

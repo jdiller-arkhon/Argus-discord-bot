@@ -1,4 +1,4 @@
-import { type Db, jobRunsMigrationSql, type Migration, openDatabase, ticketsMigrationSql } from '@arkhon/shared';
+import { createD1BridgeDb, jobRunsMigrationSql, type Migration, migrate, openSqliteDb, type SqlDb, ticketsMigrationSql } from '@arkhon/shared';
 
 /**
  * The bot stores Discord/Argus identifiers, display names, roles, processed
@@ -194,6 +194,15 @@ export const argusMigrations: Migration[] = [
   },
 ];
 
-export function openArgusDatabase(path: string): Db {
-  return openDatabase(path, argusMigrations);
+/**
+ * Opens the bot's database and applies new migrations: Cloudflare D1 through the Worker when
+ * `d1BridgeUrl` is set (on Cloudflare), otherwise the SQLite file at `path`.
+ */
+export async function openArgusDatabase(options: { path: string; d1BridgeUrl?: string }): Promise<SqlDb> {
+  if (options.d1BridgeUrl) {
+    const db = createD1BridgeDb(options.d1BridgeUrl);
+    await migrate(db, argusMigrations);
+    return db;
+  }
+  return openSqliteDb(options.path, argusMigrations);
 }

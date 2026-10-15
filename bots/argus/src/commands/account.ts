@@ -46,7 +46,7 @@ export function linkSubcommand(context: ArgusContext): Subcommand {
       }
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const result = await callArgus(context, 'redeemLinkCode', () => context.argus.redeemLinkCode(code, interaction.user.id));
-      context.store.upsertLink({
+      await context.store.upsertLink({
         discordUserId: interaction.user.id,
         argusUserId: result.argusUserId,
         displayName: result.displayName,
@@ -67,7 +67,7 @@ export function unlinkSubcommand(context: ArgusContext): Subcommand {
     name: 'unlink',
     build: (sub) => sub.setName('unlink').setDescription('Remove the link between your Discord and Argus accounts'),
     async execute(interaction) {
-      if (!context.store.getLink(interaction.user.id)) {
+      if (!(await context.store.getLink(interaction.user.id))) {
         await interaction.reply({
           content: "Your Discord account isn't linked to Argus, so there was nothing to remove.",
           flags: MessageFlags.Ephemeral,
@@ -100,7 +100,7 @@ export function accountComponent(context: ArgusContext): ComponentHandler {
         return;
       }
       if (action !== 'unlink') return;
-      const link = context.store.getLink(interaction.user.id);
+      const link = await context.store.getLink(interaction.user.id);
       if (!link) {
         await interaction.update({ content: "You're already unlinked.", components: [] });
         return;
@@ -115,7 +115,7 @@ export function accountComponent(context: ArgusContext): ComponentHandler {
           context.logger.warn('Could not unlink on Argus; removed locally', { discordUserId: link.discordUserId, error });
         }
       }
-      context.store.deleteLink(link.discordUserId);
+      await context.store.deleteLink(link.discordUserId);
       context.logger.info('Unlinked Argus account', { discordUserId: link.discordUserId });
       await interaction.editReply('Your Discord account is no longer linked to Argus, and Argus DMs have stopped.');
     },

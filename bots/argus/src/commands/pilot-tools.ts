@@ -49,7 +49,7 @@ export function todaySubcommand(context: ArgusContext): Subcommand {
     name: 'today',
     build: (sub) => sub.setName('today').setDescription('Today at a glance: jobs, open missions, payouts, documents'),
     async execute(interaction) {
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const summary = await callArgus(context, 'getToday', () => context.argus.getToday(link.argusUserId), link.discordUserId);
       await interaction.editReply({ embeds: [todayEmbed(summary)] });
@@ -62,7 +62,7 @@ export function scheduleSubcommand(context: ArgusContext): Subcommand {
     name: 'schedule',
     build: (sub) => sub.setName('schedule').setDescription('Your jobs for the next 7 days, grouped by day'),
     async execute(interaction) {
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const [jobs, settings] = await Promise.all([
         callArgus(context, 'listJobs', () => context.argus.listJobs(link.argusUserId, 'active'), link.discordUserId),
@@ -91,7 +91,7 @@ export function stepSubcommand(context: ArgusContext): Subcommand {
             .addChoices(...JOB_STEPS.map((step) => ({ name: STEP_LABELS[step], value: step }))),
         ),
     async execute(interaction) {
-      requirePilot(context, interaction.user.id);
+      await requirePilot(context, interaction.user.id);
       const jobId = interaction.options.getInteger('job', true);
       const step = interaction.options.getString('step', true) as JobStep;
       if (!JOB_STEPS.includes(step)) throw new UserFacingError('Pick a step from the list.');
@@ -105,7 +105,7 @@ export function statsSubcommand(context: ArgusContext): Subcommand {
     name: 'stats',
     build: (sub) => sub.setName('stats').setDescription('Pilots: rating, reviews, earnings and next standing tier'),
     async execute(interaction) {
-      const link = requirePilot(context, interaction.user.id);
+      const link = await requirePilot(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const stats = await callArgus(context, 'getStats', () => context.argus.getStats(link.argusUserId), link.discordUserId);
       await interaction.editReply({ embeds: [statsEmbed(link.displayName, stats)] });
@@ -124,7 +124,7 @@ export function dutySubcommand(context: ArgusContext): Subcommand {
           option.setName('set').setDescription('Leave empty to just check').addChoices({ name: 'On duty', value: 'on' }, { name: 'Off duty', value: 'off' }),
         ),
     async execute(interaction) {
-      const link = requirePilot(context, interaction.user.id);
+      const link = await requirePilot(context, interaction.user.id);
       const wanted = interaction.options.getString('set');
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const onDuty = await callArgus(context, 'getDuty', () => context.argus.getDuty(link.argusUserId), link.discordUserId);
@@ -151,7 +151,7 @@ export function pilotToolsComponent(context: ArgusContext): ComponentHandler {
         await interaction.update({ content: 'Cancelled. Nothing was changed in Argus.', embeds: [], components: [] });
         return;
       }
-      const link = requirePilot(context, interaction.user.id);
+      const link = await requirePilot(context, interaction.user.id);
 
       if (action === 'step') {
         const jobId = Number(a);

@@ -8,14 +8,14 @@ import { loadArgusConfig } from './config.js';
 try {
   const config = loadArgusConfig();
   const logger = createLogger('argus', config.env.LOG_LEVEL);
-  const context = createContext(config, logger);
+  const context = await createContext(config, logger);
   const count = await registerCommands({
     token: config.env.DISCORD_TOKEN,
     applicationId: config.env.DISCORD_APPLICATION_ID,
     guildId: config.env.DISCORD_GUILD_ID,
     commands: createCommands(context),
   });
-  context.store.db.close();
+  await context.store.db.close();
   logger.info('Registered slash commands', { count, scope: config.env.DISCORD_GUILD_ID ? 'guild' : 'global' });
 } catch (error) {
   process.stderr.write(`${error instanceof ConfigError ? error.message : String(error)}\n`);

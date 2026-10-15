@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { openDatabase } from '../src/db.js';
+import { openSqliteDb } from '../src/sqlite.js';
 import { ticketChannelName } from '../src/tickets/flow.js';
 import { canTransition, InvalidTransitionError, nextStatus, TICKET_ACTIONS, TICKET_STATUSES } from '../src/tickets/state.js';
 import { TicketStore, ticketsMigrationSql } from '../src/tickets/store.js';
@@ -30,42 +30,42 @@ describe('ticket state machine', () => {
 });
 
 describe('TicketStore', () => {
-  const setup = () => new TicketStore(openDatabase(':memory:', [{ version: 1, name: 'tickets', sql: ticketsMigrationSql }]));
+  const setup = async () => new TicketStore(await openSqliteDb(':memory:', [{ version: 1, name: 'tickets', sql: ticketsMigrationSql }]));
   const base = { guildId: '1'.repeat(18), product: 'argus', userId: '2'.repeat(18), subject: 'Upload stuck', description: 'Zip upload stalls at 90%' };
 
-  it('creates tickets and finds the active one per user and product', () => {
-    const store = setup();
-    const ticket = store.create({ ...base, reference: '1042' });
+  it('creates tickets and finds the active one per user and product', async () => {
+    const store = await setup();
+    const ticket = await store.create({ ...base, reference: '1042' });
     expect(ticket).toMatchObject({ status: 'open', reference: '1042', channelId: null });
     // Not "active" until it has a channel.
-    expect(store.findActiveForUser(base.userId, 'argus')).toBeUndefined();
-    store.setChannel(ticket.id, '3'.repeat(18), 'thread');
-    expect(store.findActiveForUser(base.userId, 'argus')?.id).toBe(ticket.id);
-    expect(store.findActiveForUser(base.userId, 'certa')).toBeUndefined();
-    expect(store.activeChannelIds()).toEqual(['3'.repeat(18)]);
+    expect(await store.findActiveForUser(base.userId, 'argus')).toBeUndefined();
+    await store.setChannel(ticket.id, '3'.repeat(18), 'thread');
+    expect((await store.findActiveForUser(base.userId, 'argus'))?.id).toBe(ticket.id);
+    expect(await store.findActiveForUser(base.userId, 'certa')).toBeUndefined();
+    expect(await store.activeChannelIds()).toEqual(['3'.repeat(18)]);
   });
 
-  it('applies optimistic transitions and closes once', () => {
-    const store = setup();
-    const ticket = store.create(base);
-    store.setChannel(ticket.id, '3'.repeat(18), 'channel');
-    expect(store.transition(ticket.id, 'open', 'open', '9'.repeat(18))).toBe(true);
-    expect(store.get(ticket.id)?.claimedById).toBe('9'.repeat(18));
-    expect(store.transition(ticket.id, 'open', 'waiting')).toBe(true);
+  it('applies optimistic transitions and closes once', async () => {
+    const store = await setup();
+    const ticket = await store.create(base);
+    await store.setChannel(ticket.id, '3'.repeat(18), 'channel');
+    expect(await store.transition(ticket.id, 'open', 'open', '9'.repeat(18))).toBe(true);
+    expect((await store.get(ticket.id))?.claimedById).toBe('9'.repeat(18));
+    expect(await store.transition(ticket.id, 'open', 'waiting')).toBe(true);
     // A second click based on the stale "open" state loses.
-    expect(store.transition(ticket.id, 'open', 'waiting')).toBe(false);
-    expect(store.close(ticket.id, '9'.repeat(18), new Date('2026-10-10T00:00:00Z'))).toBe(true);
-    expect(store.close(ticket.id, '9'.repeat(18))).toBe(false);
-    expect(store.get(ticket.id)).toMatchObject({ status: 'closed', closedAt: '2026-10-10T00:00:00.000Z' });
-    expect(store.activeChannelIds()).toEqual([]);
+    expect(await store.transition(ticket.id, 'open', 'waiting')).toBe(false);
+    expect(await store.close(ticket.id, '9'.repeat(18), new Date('2026-10-10T00:00:00Z'))).toBe(true);
+    expect(await store.close(ticket.id, '9'.repeat(18))).toBe(false);
+    expect(await store.get(ticket.id)).toMatchObject({ status: 'closed', closedAt: '2026-10-10T00:00:00.000Z' });
+    expect(await store.activeChannelIds()).toEqual([]);
   });
 
-  it('records only the first staff reply', () => {
-    const store = setup();
-    const ticket = store.create(base);
-    store.recordFirstStaffReply(ticket.id, new Date('2026-10-10T01:00:00Z'));
-    store.recordFirstStaffReply(ticket.id, new Date('2026-10-10T02:00:00Z'));
-    expect(store.get(ticket.id)?.firstStaffReplyAt).toBe('2026-10-10T01:00:00.000Z');
+  it('records only the first staff reply', async () => {
+    const store = await setup();
+    const ticket = await store.create(base);
+    await store.recordFirstStaffReply(ticket.id, new Date('2026-10-10T01:00:00Z'));
+    await store.recordFirstStaffReply(ticket.id, new Date('2026-10-10T02:00:00Z'));
+    expect((await store.get(ticket.id))?.firstStaffReplyAt).toBe('2026-10-10T01:00:00.000Z');
   });
 });
 

@@ -74,7 +74,7 @@ export function missionsSubcommand(context: ArgusContext): Subcommand {
     name: 'missions',
     build: (sub) => sub.setName('missions').setDescription('Pilots: open missions you can accept right now'),
     async execute(interaction) {
-      const link = requirePilot(context, interaction.user.id);
+      const link = await requirePilot(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const board = await callArgus(context, 'listOpenMissions', () => context.argus.listOpenMissions(link.argusUserId), link.discordUserId);
       await interaction.editReply(missionBoardMessage(board, context.now().toISODate()!));
@@ -88,7 +88,7 @@ export function missionsComponent(context: ArgusContext): ComponentHandler {
 
     async handleSelect(interaction, [action]) {
       if (action !== 'pick') return;
-      const link = requirePilot(context, interaction.user.id);
+      const link = await requirePilot(context, interaction.user.id);
       const missionId = Number(interaction.values[0]);
       await interaction.deferUpdate();
       // Re-read the board: the mission may have been taken since the list was shown.
@@ -113,7 +113,7 @@ export function missionsComponent(context: ArgusContext): ComponentHandler {
       if (action !== 'confirm') return;
       const missionId = Number(arg);
       if (!Number.isInteger(missionId) || missionId <= 0) throw new UserFacingError('That button is no longer valid.');
-      const link = requirePilot(context, interaction.user.id);
+      const link = await requirePilot(context, interaction.user.id);
 
       // Remove the buttons first so a double click cannot submit twice.
       await interaction.update({ content: `Accepting mission #${missionId}…`, components: [] });

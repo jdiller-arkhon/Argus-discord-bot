@@ -1,4 +1,4 @@
-import type { Db } from '../db.js';
+import type { SqlDb } from '../sql.js';
 import { isTicketStatus, type TicketStatus } from './state.js';
 
 /** Include in a bot's migrations to enable {@link TicketStore}. */
@@ -91,93 +91,99 @@ export interface NewTicket {
 }
 
 /**
- * SQLite storage for support tickets. Status changes are optimistic
- * (`WHERE status = from`) so two staff clicking at once cannot both win.
+ * Storage for support tickets. Status changes are optimistic (`WHERE status = from`) so two staff
+ * clicking at once cannot both win.
  */
 export class TicketStore {
-  constructor(readonly db: Db) {}
+  constructor(readonly db: SqlDb) {}
 
-  create(ticket: NewTicket, now: Date = new Date()): Ticket {
-    const result = this.db
-      .prepare(
-        `INSERT INTO tickets (guild_id, product, user_id, subject, description, reference, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`,
-      )
-      .run(
-        ticket.guildId,
-        ticket.product,
-        ticket.userId,
-        ticket.subject,
-        ticket.description,
-        ticket.reference ?? null,
-        now.toISOString(),
-      );
-    return this.get(Number(result.lastInsertRowid))!;
+  async create(ticket: NewTicket, now: Date = new Date()): Promise<Ticket> {
+    const result = await this.db.run(
+      `INSERT INTO tickets (guild_id, product, user_id, subject, description, reference, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`,
+      ticket.guildId,
+      ticket.product,
+      ticket.userId,
+      ticket.subject,
+      ticket.description,
+      ticket.reference ?? null,
+      now.toISOString(),
+    );
+    const created = result.lastRowId === null ? undefined : await this.get(result.lastRowId);
+    if (!created) throw new Error('Ticket was not created');
+    return created;
   }
 
-  get(id: number): Ticket | undefined {
-    const row = this.db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) as TicketRow | undefined;
+  async get(id: number): Promise<Ticket | undefined> {
+    const row = await this.db.get<TicketRow>('SELECT * FROM tickets WHERE id = ?', id);
     return row ? toTicket(row) : undefined;
   }
 
-  getByChannel(channelId: string): Ticket | undefined {
-    const row = this.db.prepare('SELECT * FROM tickets WHERE channel_id = ?').get(channelId) as TicketRow | undefined;
+  async getByChannel(channelId: string): Promise<Ticket | undefined> {
+    const row = await this.db.get<TicketRow>('SELECT * FROM tickets WHERE channel_id = ?', channelId);
     return row ? toTicket(row) : undefined;
   }
 
   /** The user's ticket for `product` that is still open or waiting, if any. */
-  findActiveForUser(userId: string, product: string): Ticket | undefined {
-    const row = this.db
-      .prepare(
-        `SELECT * FROM tickets
-         WHERE user_id = ? AND product = ? AND status IN ('open', 'waiting') AND channel_id IS NOT NULL
-         ORDER BY id DESC LIMIT 1`,
-      )
-      .get(userId, product) as TicketRow | undefined;
+  async findActiveForUser(userId: string, product: string): Promise<Ticket | undefined> {
+    const row = await this.db.get<TicketRow>(
+      `SELECT * FROM tickets
+       WHERE user_id = ? AND product = ? AND status IN ('open', 'waiting') AND channel_id IS NOT NULL
+       ORDER BY id DESC LIMIT 1`,
+      userId,
+      product,
+    );
     return row ? toTicket(row) : undefined;
   }
 
-  activeChannelIds(): string[] {
-    const rows = this.db
-      .prepare(`SELECT channel_id FROM tickets WHERE status IN ('open', 'waiting') AND channel_id IS NOT NULL`)
-      .all() as { channel_id: string }[];
+  async activeChannelIds(): Promise<string[]> {
+    const rows = await this.db.all<{ channel_id: string }>(
+      `SELECT channel_id FROM tickets WHERE status IN ('open', 'waiting') AND channel_id IS NOT NULL`,
+    );
     return rows.map((row) => row.channel_id);
   }
 
-  setChannel(id: number, channelId: string, kind: 'thread' | 'channel'): void {
-    this.db.prepare('UPDATE tickets SET channel_id = ?, channel_kind = ? WHERE id = ?').run(channelId, kind, id);
+  async setChannel(id: number, channelId: string, kind: 'thread' | 'channel'): Promise<void> {
+    await this.db.run('UPDATE tickets SET channel_id = ?, channel_kind = ? WHERE id = ?', channelId, kind, id);
   }
 
   /** Removes a ticket whose channel could not be created. */
-  delete(id: number): void {
-    this.db.prepare('DELETE FROM tickets WHERE id = ?').run(id);
+  async delete(id: number): Promise<void> {
+    await this.db.run('DELETE FROM tickets WHERE id = ?', id);
   }
 
   /** Moves `from` -> `to`; returns false if the ticket changed in the meantime. */
-  transition(id: number, from: TicketStatus, to: TicketStatus, claimedById?: string): boolean {
+  async transition(id: number, from: TicketStatus, to: TicketStatus, claimedById?: string): Promise<boolean> {
     const result =
       claimedById === undefined
-        ? this.db.prepare('UPDATE tickets SET status = ? WHERE id = ? AND status = ?').run(to, id, from)
-        : this.db
-            .prepare('UPDATE tickets SET status = ?, claimed_by_id = ? WHERE id = ? AND status = ?')
-            .run(to, claimedById, id, from);
+        ? await this.db.run('UPDATE tickets SET status = ? WHERE id = ? AND status = ?', to, id, from)
+        : await this.db.run(
+            'UPDATE tickets SET status = ?, claimed_by_id = ? WHERE id = ? AND status = ?',
+            to,
+            claimedById,
+            id,
+            from,
+          );
     return result.changes > 0;
   }
 
   /** Closes an open or waiting ticket; returns false if it was already closed. */
-  close(id: number, closedById: string, now: Date = new Date()): boolean {
-    const result = this.db
-      .prepare(
-        `UPDATE tickets SET status = 'closed', closed_by_id = ?, closed_at = ?
-         WHERE id = ? AND status IN ('open', 'waiting')`,
-      )
-      .run(closedById, now.toISOString(), id);
+  async close(id: number, closedById: string, now: Date = new Date()): Promise<boolean> {
+    const result = await this.db.run(
+      `UPDATE tickets SET status = 'closed', closed_by_id = ?, closed_at = ?
+       WHERE id = ? AND status IN ('open', 'waiting')`,
+      closedById,
+      now.toISOString(),
+      id,
+    );
     return result.changes > 0;
   }
 
-  recordFirstStaffReply(id: number, at: Date): void {
-    this.db
-      .prepare('UPDATE tickets SET first_staff_reply_at = ? WHERE id = ? AND first_staff_reply_at IS NULL')
-      .run(at.toISOString(), id);
+  async recordFirstStaffReply(id: number, at: Date): Promise<void> {
+    await this.db.run(
+      'UPDATE tickets SET first_staff_reply_at = ? WHERE id = ? AND first_staff_reply_at IS NULL',
+      at.toISOString(),
+      id,
+    );
   }
 }

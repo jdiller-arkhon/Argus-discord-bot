@@ -14,10 +14,10 @@ export interface ScheduledJob {
 }
 
 export interface JobRunStore {
-  /** Returns true if the run was claimed, false if it already happened. */
-  claim(job: string, runKey: string): boolean;
+  /** Resolves true if the run was claimed, false if it already happened. */
+  claim(job: string, runKey: string): Promise<boolean>;
   /** Releases a claim so a failed run is retried on the next tick. */
-  release(job: string, runKey: string): void;
+  release(job: string, runKey: string): Promise<void>;
 }
 
 function parseTime(time: string): { hour: number; minute: number } {
@@ -78,21 +78,26 @@ export function startScheduler(jobs: readonly ScheduledJob[], options: Scheduler
       const failedAt = lastFailure.get(job.name);
       if (failedAt !== undefined && current.toMillis() - failedAt < retryDelayMs) continue;
       const runKey = dueRunKey(job.schedule, current);
-      if (!runKey || !options.store.claim(job.name, runKey)) continue;
+      if (!runKey) continue;
 
+      // Marked running before the claim resolves, so the next tick cannot claim it twice.
       running.add(job.name);
-      options.logger.info('Running scheduled job', { job: job.name, runKey });
-      job
-        .run({ runKey, now: current })
-        .then(() => {
-          lastFailure.delete(job.name);
-          options.logger.info('Scheduled job finished', { job: job.name, runKey });
+      options.store
+        .claim(job.name, runKey)
+        .then(async (claimed) => {
+          if (!claimed) return;
+          options.logger.info('Running scheduled job', { job: job.name, runKey });
+          try {
+            await job.run({ runKey, now: current });
+            lastFailure.delete(job.name);
+            options.logger.info('Scheduled job finished', { job: job.name, runKey });
+          } catch (error) {
+            options.logger.error('Scheduled job failed; will retry later', { job: job.name, runKey, error });
+            lastFailure.set(job.name, current.toMillis());
+            await options.store.release(job.name, runKey);
+          }
         })
-        .catch((error: unknown) => {
-          options.logger.error('Scheduled job failed; will retry later', { job: job.name, runKey, error });
-          lastFailure.set(job.name, current.toMillis());
-          options.store.release(job.name, runKey);
-        })
+        .catch((error: unknown) => options.logger.error('Could not record scheduled job run', { job: job.name, runKey, error }))
         .finally(() => running.delete(job.name));
     }
   };

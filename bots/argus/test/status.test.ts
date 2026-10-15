@@ -62,8 +62,8 @@ describe('announcementContent', () => {
 });
 
 describe('StatusMonitor', () => {
-  function monitor(confirmations = 2) {
-    const store = new ArgusStore(openArgusDatabase(':memory:'));
+  async function monitor(confirmations = 2) {
+    const store = new ArgusStore(await openArgusDatabase({ path: ':memory:' }));
     const announced: StatusAnnouncement[] = [];
     let failPost = false;
     const m = new StatusMonitor({
@@ -80,17 +80,17 @@ describe('StatusMonitor', () => {
   }
 
   it('debounces polls but applies webhook updates immediately, persisting state', async () => {
-    const { m, store, announced } = monitor();
+    const { m, store, announced } = await monitor();
     await m.observe(status('operational'), 'poll');
     expect(await m.observe(status('degraded'), 'poll')).toBeNull();
     expect(await m.observe(status('degraded'), 'poll')).toEqual({ from: 'operational', to: 'degraded', ping: true });
     expect(await m.observe(status('operational'), 'webhook')).toEqual({ from: 'degraded', to: 'operational', ping: false });
     expect(announced).toHaveLength(2);
-    expect(store.getStatusMemory()).toEqual({ announced: 'operational', pending: null, pendingCount: 0 });
+    expect(await store.getStatusMemory()).toEqual({ announced: 'operational', pending: null, pendingCount: 0 });
   });
 
   it('retries the announcement on the next observation when posting fails', async () => {
-    const { m, announced, failPosts } = monitor(1);
+    const { m, announced, failPosts } = await monitor(1);
     await m.observe(status('operational'), 'poll');
     failPosts(true);
     await expect(m.observe(status('outage'), 'poll')).rejects.toThrow('discord down');
@@ -100,7 +100,7 @@ describe('StatusMonitor', () => {
   });
 
   it('serializes concurrent observations', async () => {
-    const { m, announced } = monitor(1);
+    const { m, announced } = await monitor(1);
     await m.observe(status('operational'), 'poll');
     await Promise.all([m.observe(status('outage'), 'webhook'), m.observe(status('outage'), 'poll')]);
     expect(announced).toEqual([{ from: 'operational', to: 'outage', ping: true }]);

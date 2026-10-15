@@ -124,7 +124,7 @@ export function alertsSubcommand(context: ArgusContext): Subcommand {
     name: 'alerts',
     build: (sub) => sub.setName('alerts').setDescription('Choose which Argus updates you get by DM'),
     async execute(interaction) {
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const settings = await callArgus(context, 'getBotSettings', () => context.settings.get(link.argusUserId), link.discordUserId);
       await interaction.editReply(alertsPanel(link.role, settings, context.config.env.ARGUS_APP_URL));
@@ -139,14 +139,14 @@ export function alertsComponent(context: ArgusContext): ComponentHandler {
 
     async handleSelect(interaction, [action]) {
       if (action !== 'pick') return;
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       const settings = await context.settings.get(link.argusUserId);
       const pending = disabledAfterSelection(settings.disabledAlerts, interaction.values, alertsForRole(link.role));
       await interaction.update(alertsPanel(link.role, settings, appUrl(), { pending }));
     },
 
     async handleButton(interaction, [action, arg]) {
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       if (action === 'cancel') {
         const settings = await context.settings.get(link.argusUserId);
         await interaction.update(alertsPanel(link.role, settings, appUrl()));

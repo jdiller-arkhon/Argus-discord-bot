@@ -35,9 +35,9 @@ async function sendEvent(args: string[]): Promise<void> {
   let userId: string | null = null;
   const discordId = option(args, 'discord');
   if (discordId) {
-    const db = openArgusDatabase(config.env.ARGUS_DB_PATH);
-    const link = new ArgusStore(db).getLink(discordId);
-    db.close();
+    const db = await openArgusDatabase({ path: config.env.ARGUS_DB_PATH, d1BridgeUrl: config.env.D1_BRIDGE_URL });
+    const link = await new ArgusStore(db).getLink(discordId);
+    await db.close();
     if (!link) throw new Error(`Discord user ${discordId} is not linked. Run /argus link first.`);
     userId = link.argusUserId;
   }
@@ -57,26 +57,26 @@ async function sendEvent(args: string[]): Promise<void> {
   process.stdout.write(`${response.status} ${await response.text()}\n`);
 }
 
-function setMockStatus(args: string[]): void {
+async function setMockStatus(args: string[]): Promise<void> {
   const [state, ...summary] = args;
   if (!state || !(SERVICE_STATES as readonly string[]).includes(state)) {
     throw new Error(`State must be one of ${SERVICE_STATES.join(', ')}.\n\n${USAGE}`);
   }
   const config = loadArgusConfig();
   if (config.env.ARGUS_CLIENT !== 'mock') throw new Error('mock-status only works with ARGUS_CLIENT=mock.');
-  const db = openArgusDatabase(config.env.ARGUS_DB_PATH);
-  new MockArgusClient(db, { timezone: config.timezone, now: () => DateTime.now().setZone(config.timezone) }).setServiceStatus(
+  const db = await openArgusDatabase({ path: config.env.ARGUS_DB_PATH, d1BridgeUrl: config.env.D1_BRIDGE_URL });
+  await new MockArgusClient(db, { timezone: config.timezone, now: () => DateTime.now().setZone(config.timezone) }).setServiceStatus(
     state as ServiceState,
     summary.length > 0 ? summary.join(' ') : null,
   );
-  db.close();
+  await db.close();
   process.stdout.write(`Mock Argus status set to ${state}.\n`);
 }
 
 const [command, ...rest] = process.argv.slice(2);
 try {
   if (command === 'event') await sendEvent(rest);
-  else if (command === 'status') setMockStatus(rest);
+  else if (command === 'status') await setMockStatus(rest);
   else process.stdout.write(`${USAGE}\n`);
 } catch (error) {
   process.stderr.write(`${error instanceof ConfigError || error instanceof Error ? error.message : String(error)}\n`);

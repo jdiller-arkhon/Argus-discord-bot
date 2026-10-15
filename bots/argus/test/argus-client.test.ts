@@ -215,13 +215,13 @@ describe('HttpArgusClient', () => {
 });
 
 describe('MockArgusClient', () => {
-  const setup = () => {
-    const db = openArgusDatabase(':memory:');
+  const setup = async () => {
+    const db = await openArgusDatabase({ path: ':memory:' });
     return new MockArgusClient(db, { timezone: 'America/Denver', now: () => NOW });
   };
 
   it('links by code prefix, once per code, keeping data across relinks', async () => {
-    const mock = setup();
+    const mock = await setup();
     expect(await mock.redeemLinkCode('client-1', USER)).toEqual({ argusUserId: `mock-client-${USER}`, displayName: 'Client 5678', role: 'client' });
     await expect(mock.redeemLinkCode('CLIENT-1', USER)).rejects.toBeInstanceOf(ArgusInvalidLinkCodeError);
     const before = await mock.listJobs(`mock-client-${USER}`, 'active');
@@ -232,7 +232,7 @@ describe('MockArgusClient', () => {
   });
 
   it('seeds clients with jobs in every interesting state', async () => {
-    const mock = setup();
+    const mock = await setup();
     const { argusUserId } = await mock.redeemLinkCode('CLIENT-1', USER);
     const active = await mock.listJobs(argusUserId, 'active');
     expect(active.map((j) => j.status)).toEqual(['review', 'in_progress', 'pending']);
@@ -242,7 +242,7 @@ describe('MockArgusClient', () => {
   });
 
   it('lets exactly one pilot win a mission', async () => {
-    const mock = setup();
+    const mock = await setup();
     const a = (await mock.redeemLinkCode('PILOT-A', USER)).argusUserId;
     const b = (await mock.redeemLinkCode('PILOT-B', '999999999999999999')).argusUserId;
     const board = await mock.listOpenMissions(a);
@@ -258,12 +258,12 @@ describe('MockArgusClient', () => {
   });
 
   it('refuses missions to unverified pilots and refills an empty board', async () => {
-    const mock = setup();
+    const mock = await setup();
     const pilot = (await mock.redeemLinkCode('PILOT-A', USER)).argusUserId;
     const board = await mock.listOpenMissions(pilot);
     for (const m of board.missions) await mock.acceptMission(pilot, m.id);
     expect((await mock.listOpenMissions(pilot)).missions).toHaveLength(4);
-    mock.setPilotVerification(pilot, 'verified', true);
+    await mock.setPilotVerification(pilot, 'verified', true);
     expect((await mock.listOpenMissions(pilot)).canAccept).toBe(false);
     await expect(mock.acceptMission(pilot, (await mock.listOpenMissions(pilot)).missions[0]!.id)).rejects.toBeInstanceOf(
       ArgusRejectedError,
@@ -271,13 +271,13 @@ describe('MockArgusClient', () => {
   });
 
   it('reports pilot credentials and a settable service status', async () => {
-    const mock = setup();
+    const mock = await setup();
     const pilot = (await mock.redeemLinkCode('PILOT-A', USER)).argusUserId;
     const creds = await mock.getCredentials(pilot);
     expect(creds.credentials.map((c) => c.kind).sort()).toEqual(['drone_reg', 'faa_part107', 'id', 'insurance']);
     expect(creds.credentials.find((c) => c.kind === 'insurance')?.expiresAt).toBe('2026-11-04');
     expect((await mock.getServiceStatus()).state).toBe('operational');
-    mock.setServiceStatus('outage', 'Database unreachable');
+    await mock.setServiceStatus('outage', 'Database unreachable');
     expect(await mock.getServiceStatus()).toMatchObject({ state: 'outage', summary: 'Database unreachable' });
     await expect(mock.getEarnings('mock-pilot-nobody')).rejects.toBeInstanceOf(ArgusUserNotFoundError);
   });
@@ -285,7 +285,7 @@ describe('MockArgusClient', () => {
 
 describe('createArgusClient', () => {
   it('uses the mock, or the mock plus a real status source when ARGUS_STATUS_URL is set', async () => {
-    const db = openArgusDatabase(':memory:');
+    const db = await openArgusDatabase({ path: ':memory:' });
     expect(createArgusClient(testConfig(), db)).toBeInstanceOf(MockArgusClient);
     const combined = createArgusClient(testConfig({ ARGUS_STATUS_URL: 'https://arkhonindustries.com/api/health' }), db);
     expect(combined).not.toBeInstanceOf(MockArgusClient);
@@ -296,7 +296,7 @@ describe('createArgusClient', () => {
   });
 
   it('routes only status calls to the status source', async () => {
-    const mock = new MockArgusClient(openArgusDatabase(':memory:'), { timezone: 'America/Denver', now: () => NOW });
+    const mock = new MockArgusClient(await openArgusDatabase({ path: ':memory:' }), { timezone: 'America/Denver', now: () => NOW });
     const outage = { state: 'outage' as const, summary: null, components: [], updatedAt: '2026-10-10T18:00:00Z' };
     const client = withStatusFrom(mock, { getServiceStatus: async () => outage });
     expect(await client.getServiceStatus()).toBe(outage);

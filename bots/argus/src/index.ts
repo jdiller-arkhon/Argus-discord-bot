@@ -6,7 +6,7 @@ import {
   postEmbeds,
   registerCommands,
   sendDm,
-  sqliteJobRunStore,
+  sqlJobRunStore,
   startScheduler,
 } from '@arkhon/shared';
 import { Client, Events, GatewayIntentBits } from 'discord.js';
@@ -22,7 +22,7 @@ import { createWebhookServer, WEBHOOK_PATH } from './webhook/server.js';
 async function main(): Promise<void> {
   const config = loadArgusConfig();
   const logger = createLogger('argus', config.env.LOG_LEVEL);
-  const context = createContext(config, logger);
+  const context = await createContext(config, logger);
   const commands = createCommands(context);
   const { env } = config;
 
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   let stopHeldDms: (() => void) | undefined;
   client.once(Events.ClientReady, async (ready) => {
     logger.info('Connected to Discord', { user: ready.user.tag, guilds: ready.guilds.cache.size });
-    if (context.tickets) logger.info('Loaded active tickets', { count: context.tickets.loadActiveChannels() });
+    if (context.tickets) logger.info('Loaded active tickets', { count: await context.tickets.loadActiveChannels() });
     try {
       const count = await registerCommands({
         token: env.DISCORD_TOKEN,
@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     }
     stopScheduler = startScheduler(createJobs(context), {
       timezone: config.timezone,
-      store: sqliteJobRunStore(context.store.db),
+      store: sqlJobRunStore(context.store.db),
       logger,
     });
     stopPolling = startStatusPolling(context, monitor);
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
     stopHeldDms?.();
     server?.close();
     await client.destroy();
-    context.store.db.close();
+    await context.store.db.close();
     process.exit(0);
   };
   process.once('SIGINT', () => void shutdown('SIGINT'));

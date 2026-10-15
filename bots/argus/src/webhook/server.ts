@@ -14,8 +14,8 @@ export interface WebhookServerDeps {
   /** False until the Discord client is ready; Argus gets a 503 and retries. */
   isReady(): boolean;
   /** Records an event ID; false if it was already processed. */
-  claimEvent(eventId: string, type: string): boolean;
-  releaseEvent(eventId: string): void;
+  claimEvent(eventId: string, type: string): Promise<boolean>;
+  releaseEvent(eventId: string): Promise<void>;
   dispatch(event: ArgusEvent): Promise<DispatchResult>;
 }
 
@@ -95,7 +95,7 @@ export function createWebhookServer(deps: WebhookServerDeps): Server {
     const event = parseArgusEvent(json);
 
     if (!deps.isReady()) throw new RequestError(503, 'bot is not connected to Discord yet');
-    if (!deps.claimEvent(event.id, event.type)) {
+    if (!(await deps.claimEvent(event.id, event.type))) {
       send(res, 200, { ok: true, duplicate: true });
       return;
     }
@@ -104,7 +104,7 @@ export function createWebhookServer(deps: WebhookServerDeps): Server {
       logger.info('Argus event handled', { eventId: event.id, type: event.type, ...result });
       send(res, 200, { ok: true, ...result });
     } catch (error) {
-      deps.releaseEvent(event.id);
+      await deps.releaseEvent(event.id);
       throw error;
     }
   }

@@ -43,6 +43,8 @@ export const argusEnvSchema = z
     /** Base URL of the Argus web app, for "open in Argus" links. */
     ARGUS_APP_URL: z.string().url().default('https://arkhonindustries.com/app'),
     ARGUS_DB_PATH: z.string().default('./data/argus.sqlite'),
+    /** Cloudflare only, set by the Worker: use D1 through the Worker instead of ARGUS_DB_PATH. */
+    D1_BRIDGE_URL: z.string().url().optional(),
     ARGUS_TIMEZONE: z
       .string()
       .default('America/Denver')

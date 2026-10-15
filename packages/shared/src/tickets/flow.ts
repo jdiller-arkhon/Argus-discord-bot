@@ -68,7 +68,7 @@ export interface TicketFlow {
   /** Feed every guild message here: reopens waiting tickets and tracks first staff reply. */
   onMessage(message: Message): Promise<void>;
   /** Loads active ticket channels from the store; call once at startup. */
-  loadActiveChannels(): number;
+  loadActiveChannels(): Promise<number>;
 }
 
 function channelUrl(guildId: string, channelId: string): string {
@@ -139,7 +139,7 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
     if (!interaction.inCachedGuild()) {
       throw new UserFacingError('Support tickets can only be opened from the server, not in DMs.');
     }
-    const existing = store.findActiveForUser(interaction.user.id, options.product);
+    const existing = await store.findActiveForUser(interaction.user.id, options.product);
     if (existing) throw new UserFacingError(activeTicketMessage(existing));
     await interaction.showModal(buildModal());
   }
@@ -151,14 +151,14 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
     const member = interaction.member;
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const existing = store.findActiveForUser(member.id, options.product);
+    const existing = await store.findActiveForUser(member.id, options.product);
     if (existing) throw new UserFacingError(activeTicketMessage(existing));
 
     const subject = interaction.fields.getTextInputValue(TICKET_FIELDS.subject).trim();
     const description = interaction.fields.getTextInputValue(TICKET_FIELDS.description).trim();
     const reference = interaction.fields.getTextInputValue(TICKET_FIELDS.reference).trim() || null;
 
-    const ticket = store.create(
+    const ticket = await store.create(
       { guildId: member.guild.id, product: options.product, userId: member.id, subject, description, reference },
       now(),
     );
@@ -168,10 +168,10 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
     try {
       ({ channel, kind } = await createTicketChannel(member, ticket.id));
     } catch (error) {
-      store.delete(ticket.id);
+      await store.delete(ticket.id);
       throw error;
     }
-    store.setChannel(ticket.id, channel.id, kind);
+    await store.setChannel(ticket.id, channel.id, kind);
     activeChannels.add(channel.id);
 
     const embed = new EmbedBuilder()
@@ -268,7 +268,7 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
   }
 
   async function handleStaffAction(interaction: ButtonInteraction, action: StaffAction, ticketId: number): Promise<void> {
-    const ticket = store.get(ticketId);
+    const ticket = await store.get(ticketId);
     if (!ticket) throw new UserFacingError(`Ticket #${ticketId} no longer exists.`);
     if (!interaction.inCachedGuild() || !isTicketStaff(interaction.member, options.staffRoleId)) {
       throw new UserFacingError(`Only ${options.productLabel} staff can do that.`);
@@ -289,7 +289,7 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
     if (action === 'claim' && ticket.claimedById === staff.id) {
       throw new UserFacingError('You have already claimed this ticket.');
     }
-    if (!store.transition(ticket.id, ticket.status, to, action === 'claim' ? staff.id : undefined)) {
+    if (!(await store.transition(ticket.id, ticket.status, to, action === 'claim' ? staff.id : undefined))) {
       throw new UserFacingError('This ticket just changed. Please try again.');
     }
 
@@ -309,7 +309,7 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
 
   async function closeTicket(interaction: ButtonInteraction<'cached'>, ticket: Ticket, staff: GuildMember): Promise<void> {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    if (!store.close(ticket.id, staff.id, now())) throw new UserFacingError('This ticket is already closed.');
+    if (!(await store.close(ticket.id, staff.id, now()))) throw new UserFacingError('This ticket is already closed.');
     if (ticket.channelId) activeChannels.delete(ticket.channelId);
 
     const client: Client = interaction.client;
@@ -382,22 +382,22 @@ export function createTicketFlow(options: TicketFlowOptions): TicketFlow {
     },
     async onMessage(message) {
       if (message.author.bot || !message.inGuild() || !activeChannels.has(message.channelId)) return;
-      const ticket = store.getByChannel(message.channelId);
+      const ticket = await store.getByChannel(message.channelId);
       if (!ticket || ticket.status === 'closed') return;
 
       if (message.author.id === ticket.userId) {
-        if (ticket.status === 'waiting' && store.transition(ticket.id, 'waiting', nextStatus('waiting', 'userReply'))) {
+        if (ticket.status === 'waiting' && (await store.transition(ticket.id, 'waiting', nextStatus('waiting', 'userReply')))) {
           logger.info('Ticket reopened by user reply', { ticketId: ticket.id });
         }
         return;
       }
       if (ticket.firstStaffReplyAt) return;
       const member = message.member ?? (await message.guild.members.fetch(message.author.id).catch(() => null));
-      if (member && isTicketStaff(member, options.staffRoleId)) store.recordFirstStaffReply(ticket.id, message.createdAt);
+      if (member && isTicketStaff(member, options.staffRoleId)) await store.recordFirstStaffReply(ticket.id, message.createdAt);
     },
-    loadActiveChannels() {
+    async loadActiveChannels() {
       activeChannels.clear();
-      for (const id of store.activeChannelIds()) activeChannels.add(id);
+      for (const id of await store.activeChannelIds()) activeChannels.add(id);
       return activeChannels.size;
     },
   };

@@ -19,10 +19,10 @@ export async function deliverHeldDms(
   now: Date = new Date(),
 ): Promise<HeldDmResult> {
   const result: HeldDmResult = { sent: 0, dropped: 0 };
-  for (const dm of store.dueHeldDms(now)) {
+  for (const dm of await store.dueHeldDms(now)) {
     try {
       const delivered = await send(dm.discordUserId, EmbedBuilder.from(dm.embed as never));
-      store.deleteHeldDm(dm.id);
+      await store.deleteHeldDm(dm.id);
       if (delivered) result.sent++;
       else {
         result.dropped++;

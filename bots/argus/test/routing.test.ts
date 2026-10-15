@@ -179,9 +179,9 @@ describe('alert preference selection', () => {
 });
 
 describe('createEventDispatcher', () => {
-  function harness(userSettings: BotSettings = DEFAULT_BOT_SETTINGS, now = NOON) {
-    const store = new ArgusStore(openArgusDatabase(':memory:'));
-    store.upsertLink({ discordUserId: USER, argusUserId: 'argus-1', displayName: 'Ava', role: 'pilot' });
+  async function harness(userSettings: BotSettings = DEFAULT_BOT_SETTINGS, now = NOON) {
+    const store = new ArgusStore(await openArgusDatabase({ path: ':memory:' }));
+    await store.upsertLink({ discordUserId: USER, argusUserId: 'argus-1', displayName: 'Ava', role: 'pilot' });
     const dms: { userId: string; title?: string }[] = [];
     const posts: { channelId: string; title?: string }[] = [];
     const statuses: string[] = [];
@@ -223,7 +223,7 @@ describe('createEventDispatcher', () => {
   }
 
   it('DMs linked owners and posts broadcasts', async () => {
-    const h = harness();
+    const h = await harness();
     expect(await h.dispatch(sampleEvent('payout.paid', { userId: 'argus-1' }))).toEqual({ route: 'dm', delivered: true });
     expect(h.dms).toEqual([{ userId: USER, title: '💸 Payout sent: $265.00' }]);
     expect(await h.dispatch(sampleEvent('mission.posted'))).toEqual({ route: 'channel', delivered: true });
@@ -231,7 +231,7 @@ describe('createEventDispatcher', () => {
   });
 
   it('only asks Argus for settings when the event has a linked owner', async () => {
-    const h = harness();
+    const h = await harness();
     await h.dispatch(sampleEvent('mission.posted'));
     await h.dispatch(sampleEvent('payout.paid', { userId: 'someone-else' }));
     expect(h.settingsCalls()).toBe(0);
@@ -240,14 +240,14 @@ describe('createEventDispatcher', () => {
   });
 
   it('hands status events to the monitor', async () => {
-    const h = harness();
+    const h = await harness();
     await h.dispatch(sampleEvent('service.status_changed', { state: 'outage' }));
     expect(h.statuses).toEqual(['outage']);
   });
 
   it('holds DMs in quiet hours and delivers them afterwards', async () => {
     const night = new Date('2026-10-11T05:00:00Z');
-    const h = harness(settings(quiet()), night);
+    const h = await harness(settings(quiet()), night);
     expect(await h.dispatch(sampleEvent('job.step', { userId: 'argus-1' }))).toEqual({
       route: 'dm',
       delivered: false,
@@ -264,24 +264,24 @@ describe('createEventDispatcher', () => {
     expect(await deliverHeldDms(h.store, send, silentLogger, new Date('2026-10-11T12:59:00Z'))).toEqual({ sent: 0, dropped: 0 });
     expect(await deliverHeldDms(h.store, send, silentLogger, new Date('2026-10-11T13:00:00Z'))).toEqual({ sent: 1, dropped: 0 });
     expect(sent).toEqual([`${USER}:Job #1042: In flight`]);
-    expect(h.store.heldDmCount(USER)).toBe(0);
+    expect(await h.store.heldDmCount(USER)).toBe(0);
   });
 
   it('drops a held DM the user can no longer receive, and forgets held DMs on unlink', async () => {
     const night = new Date('2026-10-11T05:00:00Z');
-    const h = harness(settings(quiet()), night);
+    const h = await harness(settings(quiet()), night);
     await h.dispatch(sampleEvent('job.step', { userId: 'argus-1' }));
     expect(await deliverHeldDms(h.store, async () => false, silentLogger, new Date('2026-10-12T00:00:00Z'))).toEqual({
       sent: 0,
       dropped: 1,
     });
     await h.dispatch(sampleEvent('job.step', { userId: 'argus-1' }));
-    h.store.deleteLink(USER);
-    expect(h.store.heldDmCount(USER)).toBe(0);
+    await h.store.deleteLink(USER);
+    expect(await h.store.heldDmCount(USER)).toBe(0);
   });
 
   it('reports closed DMs as undelivered without failing, but fails on a broken channel so Argus retries', async () => {
-    const h = harness();
+    const h = await harness();
     h.closeDms();
     expect(await h.dispatch(sampleEvent('payout.paid', { userId: 'argus-1' }))).toEqual({
       route: 'dm',

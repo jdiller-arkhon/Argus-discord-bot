@@ -11,8 +11,8 @@ import { createSettingsSource } from './settings.js';
 import { ArgusStore } from './store.js';
 
 /** Wires config, storage, the Argus client, the FAQ, and the shared ticket flow into one context. */
-export function createContext(config: ArgusConfig, logger: Logger): ArgusContext {
-  const db = openArgusDatabase(config.env.ARGUS_DB_PATH);
+export async function createContext(config: ArgusConfig, logger: Logger): Promise<ArgusContext> {
+  const db = await openArgusDatabase({ path: config.env.ARGUS_DB_PATH, d1BridgeUrl: config.env.D1_BRIDGE_URL });
   const tickets = config.tickets
     ? createTicketFlow({
         product: 'argus',

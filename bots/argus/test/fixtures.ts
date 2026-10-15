@@ -129,8 +129,8 @@ export function testConfig(env: Record<string, string> = {}): ArgusConfig {
   return loadArgusConfig({ ...validEnv, ...env });
 }
 
-export function setup(options: { env?: Record<string, string>; certaName?: string | null } = {}) {
-  const db = openArgusDatabase(':memory:');
+export async function setup(options: { env?: Record<string, string>; certaName?: string | null } = {}) {
+  const db = await openArgusDatabase({ path: ':memory:' });
   const config = testConfig(options.env);
   const mock = new MockArgusClient(db, { timezone: 'America/Denver', now: () => NOW });
   const certaLinks: CertaLinkLookup = { displayName: () => options.certaName ?? null, close: () => {} };

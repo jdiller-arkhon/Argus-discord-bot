@@ -10,7 +10,7 @@ export function createJobs(context: ArgusContext): ScheduledJob[] {
       name: 'prune-processed-events',
       schedule: { kind: 'daily', time: '03:30' },
       run: async () => {
-        const removed = context.store.pruneProcessedEvents(PROCESSED_EVENT_RETENTION_DAYS);
+        const removed = await context.store.pruneProcessedEvents(PROCESSED_EVENT_RETENTION_DAYS);
         context.logger.info('Pruned processed Argus events', { removed });
       },
     },

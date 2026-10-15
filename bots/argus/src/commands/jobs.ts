@@ -17,7 +17,7 @@ export function jobsSubcommand(context: ArgusContext): Subcommand {
             .addChoices({ name: 'Active', value: 'active' }, { name: 'Recently finished', value: 'recent' }),
         ),
     async execute(interaction) {
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       const scope = interaction.options.getString('scope') === 'recent' ? 'recent' : 'active';
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const jobs = await callArgus(context, 'listJobs', () => context.argus.listJobs(link.argusUserId, scope), link.discordUserId);
@@ -35,7 +35,7 @@ export function jobSubcommand(context: ArgusContext): Subcommand {
         .setDescription('One job in detail: live progress, schedule, and deliverables')
         .addIntegerOption((option) => option.setName('id').setDescription('Job number, e.g. 1042').setRequired(true).setMinValue(1)),
     async execute(interaction) {
-      const link = requireLink(context, interaction.user.id);
+      const link = await requireLink(context, interaction.user.id);
       const jobId = interaction.options.getInteger('id', true);
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const job = await callArgus(context, 'getJob', () => context.argus.getJob(link.argusUserId, jobId), link.discordUserId);

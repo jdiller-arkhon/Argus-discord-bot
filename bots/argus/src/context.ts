@@ -39,15 +39,15 @@ export const PILOT_ONLY_MESSAGE =
   'That command is for Argus pilots. Your linked account is a client account; try `/argus jobs` instead.';
 
 /** Returns the caller's link or throws a friendly "not linked" error. */
-export function requireLink(context: ArgusContext, discordUserId: string): Link {
-  const link = context.store.getLink(discordUserId);
+export async function requireLink(context: ArgusContext, discordUserId: string): Promise<Link> {
+  const link = await context.store.getLink(discordUserId);
   if (!link) throw new UserFacingError(NOT_LINKED_MESSAGE);
   return link;
 }
 
 /** Like {@link requireLink}, but only for pilot accounts. */
-export function requirePilot(context: ArgusContext, discordUserId: string): Link {
-  const link = requireLink(context, discordUserId);
+export async function requirePilot(context: ArgusContext, discordUserId: string): Promise<Link> {
+  const link = await requireLink(context, discordUserId);
   if (link.role !== 'pilot') throw new UserFacingError(PILOT_ONLY_MESSAGE);
   return link;
 }
@@ -69,7 +69,7 @@ export async function callArgus<T>(
     if (error instanceof ArgusUserNotFoundError && discordUserId) {
       // Unlinked on the website (or the account was retired): forget the
       // stale link so the user is not stuck with a broken one.
-      context.store.deleteLink(discordUserId);
+      await context.store.deleteLink(discordUserId);
       context.logger.info('Removed stale Argus link', { discordUserId, action });
       throw new UserFacingError(
         'Your Discord link was removed on Argus, so it has been removed here too. Link again with `/argus link code:<code>`.',

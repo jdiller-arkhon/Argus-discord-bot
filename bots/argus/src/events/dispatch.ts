@@ -31,7 +31,7 @@ export interface EventDispatcherDeps {
 /** Routes a verified Argus event and delivers (or holds) it. Thin glue over {@link routeEvent}. */
 export function createEventDispatcher(deps: EventDispatcherDeps): (event: ArgusEvent) => Promise<DispatchResult> {
   return async (event) => {
-    const link = event.userId ? deps.store.getLinkByArgusId(event.userId) : undefined;
+    const link = event.userId ? await deps.store.getLinkByArgusId(event.userId) : undefined;
     const now = deps.now();
     const route = routeEvent(event, {
       routes: deps.routes,
@@ -50,7 +50,7 @@ export function createEventDispatcher(deps: EventDispatcherDeps): (event: ArgusE
       case 'dm': {
         const embed = formatEvent(event, deps.todayIso());
         if (route.deliverAt) {
-          deps.store.holdDm({ discordUserId: route.discordUserId, eventId: event.id, embed: embed.toJSON(), deliverAt: route.deliverAt }, now);
+          await deps.store.holdDm({ discordUserId: route.discordUserId, eventId: event.id, embed: embed.toJSON(), deliverAt: route.deliverAt }, now);
           return { route: 'dm', delivered: false, heldUntil: route.deliverAt.toISOString(), reason: 'quiet hours' };
         }
         const delivered = await deps.sendDm(route.discordUserId, embed);

@@ -1,4 +1,4 @@
-import type { Db } from '@arkhon/shared';
+import type { SqlDb } from '@arkhon/shared';
 import type { ArgusConfig } from '../config.js';
 import type { ArgusClient } from './client.js';
 import { HttpArgusClient } from './http-client.js';
@@ -14,7 +14,7 @@ export { MockArgusClient } from './mock-client.js';
  * `ARGUS_STATUS_URL` still applies, so `/argus status` and #argus-status can
  * follow the real platform's health probe before the bot API exists.
  */
-export function createArgusClient(config: ArgusConfig, db: Db): ArgusClient {
+export function createArgusClient(config: ArgusConfig, db: SqlDb): ArgusClient {
   const statusUrl = config.env.ARGUS_STATUS_URL;
   if (config.env.ARGUS_CLIENT === 'mock') {
     const mock = new MockArgusClient(db, { timezone: config.timezone });

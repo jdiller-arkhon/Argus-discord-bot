@@ -50,8 +50,8 @@ export function evaluateStatus(
 }
 
 export interface StatusMonitorDeps {
-  load(): StatusMemory;
-  save(memory: StatusMemory): void;
+  load(): Promise<StatusMemory>;
+  save(memory: StatusMemory): Promise<void>;
   /** Posts the announcement; throws if the post failed. */
   announce(announcement: StatusAnnouncement, status: ServiceStatus): Promise<void>;
   logger: Logger;
@@ -76,12 +76,12 @@ export class StatusMonitor {
 
   private async apply(status: ServiceStatus, source: 'poll' | 'webhook'): Promise<StatusAnnouncement | null> {
     const confirmations = source === 'webhook' ? 1 : this.deps.pollConfirmations;
-    const result = evaluateStatus(this.deps.load(), status.state, confirmations);
+    const result = evaluateStatus(await this.deps.load(), status.state, confirmations);
     if (result.announce) {
       await this.deps.announce(result.announce, status);
       this.deps.logger.info('Argus status change announced', { ...result.announce, source });
     }
-    this.deps.save(result.memory);
+    await this.deps.save(result.memory);
     return result.announce;
   }
 }
