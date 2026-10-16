@@ -1,15 +1,27 @@
-# Putting the Argus bot live
+# Putting the Argus bot live on Cloudflare
 
-The website side is live: the bot API at `https://arkhonindustries.com/api/bot/v1`, its database
-tables, and the Pilot Network page (admins only, `DISCORD_BOT_ROLES` in the website repo). Three
-things still need your accounts: a Discord application, a host for the bot, and three settings on
-the website's Cloudflare Worker.
+The bot runs the same way as the Ops bot (`jdiller-arkhon/Arkhon-ops-bot`, `deploy/cloudflare`). The
+setup has four parts:
 
-The steps below use [Fly.io](https://fly.io) because `fly.toml` in this repo is ready to go (about
-$3–5 a month for one small machine and a 1 GB volume). Any host that runs a Docker container
-around the clock, keeps a disk between deploys, and serves HTTPS works the same way.
+- **The bot:** the unchanged `bots/argus/Dockerfile` image runs on **Cloudflare Containers** as one
+  always-on instance. It holds the Discord gateway connection, so commands, buttons and DMs work
+  exactly as they do anywhere else.
+- **The Worker:** a small Worker (`deploy/cloudflare`, named `argus-bot`) sits in front of it. It
+  forwards `/webhooks/argus` (alerts from the Arkhon website) and `/healthz`. It starts the
+  container every 5 minutes if it isn't running, and restarts it when the settings change.
+- **The database:** D1, in the `argus-bot` database, which already exists in the Cloudflare account.
+  The container sends its queries to `http://d1.internal`. The Worker intercepts that address,
+  which is never public, and runs the queries against the D1 binding. The bot applies its own
+  migrations on startup.
+- **The website:** the Arkhon site is already live. That covers the bot API at
+  `https://arkhonindustries.com/api/bot/v1`, its tables, and the Pilot Network page, which is
+  admins only while `DISCORD_BOT_ROLES` is `["admin"]`.
 
-## 1. Make two secrets
+**Requirements:** the Cloudflare account must be on the **Workers Paid** plan, because Containers
+aren't on the free plan. Deploys run from GitHub Actions, which has Docker, so you don't need
+Docker on your own computer.
+
+## 1. Make two shared secrets
 
 On your own computer:
 
@@ -18,101 +30,103 @@ openssl rand -hex 32   # API token
 openssl rand -hex 32   # webhook secret
 ```
 
-Keep both in a password manager. Each one goes in two places, and must be identical in both:
+Each one goes in two places, and must be identical in both:
 
-| Secret | Website (Cloudflare Worker) | Bot (Fly) |
+| Secret | Website (`arkhon-industries` Worker) | Bot (GitHub secret, copied to the `argus-bot` Worker) |
 | --- | --- | --- |
 | API token | `DISCORD_BOT_API_TOKEN` | `ARGUS_API_TOKEN` |
 | Webhook secret | `DISCORD_BOT_WEBHOOK_SECRET` | `ARGUS_WEBHOOK_SECRET` |
 
 ## 2. Create the Discord application
 
-1. Open https://discord.com/developers/applications → **New Application** → name it `Argus`.
-2. **General Information:** copy the **Application ID** (`DISCORD_APPLICATION_ID`). Set the
-   icon to the Pilot Network mark if you like.
-3. **Bot:** click **Reset Token** and copy it (`DISCORD_TOKEN`). Leave every **Privileged Gateway
-   Intent** off; the bot doesn't need them. Turn **Public Bot** off so only you can invite it.
-4. In Discord, turn on **Settings → Advanced → Developer Mode**. Then right-click to **Copy ID** on:
-   - the Arkhon Pilot Network server (`DISCORD_GUILD_ID`);
-   - `#argus-status` (`ARGUS_STATUS_CHANNEL_ID`), and the role to ping on outages
-     (`ARGUS_STATUS_ROLE_ID`), if you want status posts;
-   - the support channel (`ARGUS_SUPPORT_CHANNEL_ID`) and staff role (`ARGUS_STAFF_ROLE_ID`), if
-     you want support tickets in Discord. Set both or neither.
-5. Invite the bot to the server with this link, after putting in your Application ID and server ID:
+1. Go to https://discord.com/developers/applications and choose **New Application**. Name it
+   `Argus`, and upload `assets/argus-icon.png` as the icon.
+2. On **General Information**, copy the **Application ID**. That is `DISCORD_APPLICATION_ID`.
+   Leave **Interactions Endpoint URL** blank.
+3. On **Bot**:
+   - choose **Reset Token** and copy the token. That is `DISCORD_TOKEN`;
+   - upload `assets/argus-banner.png` as the banner;
+   - turn **Public Bot** off;
+   - leave all three privileged intents off.
+4. On **Installation**, turn on Guild Install only. Give it the scopes `bot` and
+   `applications.commands`, and permissions integer `360777509904`. The permissions are listed in
+   `bots/argus/src/setup/checks.ts`. They do not include Administrator.
+5. In Discord, turn on **Settings → Advanced → Developer Mode**. Then right-click and **Copy ID** on
+   the Pilot Network server. That is `DISCORD_GUILD_ID`. Copy any channel and role IDs you want
+   too:
+   - `ARGUS_STATUS_CHANNEL_ID` and `ARGUS_STATUS_ROLE_ID`, for status posts;
+   - `ARGUS_SUPPORT_CHANNEL_ID` and `ARGUS_STAFF_ROLE_ID`, for support tickets.
+6. Invite the bot with this link, after putting in your IDs:
 
    ```
    https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot+applications.commands&permissions=360777509904&guild_id=<GUILD_ID>&disable_guild_select=true
    ```
 
-   `pnpm argus:doctor` prints this link for you once the IDs are set. The permissions are listed in
-   `bots/argus/src/setup/checks.ts`. They do not include Administrator.
+## 3. Add the GitHub secrets
 
-## 3. Deploy the bot to Fly
+In GitHub, open **Argus-discord-bot → Settings → Secrets and variables → Actions** and add these
+repository secrets:
 
-Install the CLI (https://fly.io/docs/flyctl/install/) and sign in with `fly auth login`. Then, from
-this repo:
+| Secret | Value |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token. Use the **Edit Cloudflare Workers** template, and add **Account → D1 → Edit** and **Account → Containers → Edit** |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages, in the right-hand column |
+| `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID` | From step 2 |
+| `ARGUS_API_TOKEN`, `ARGUS_WEBHOOK_SECRET` | From step 1 |
+| Any optional settings | For example `ARGUS_STATUS_CHANNEL_ID`. Every name in `.env.example` is copied, except the ones the deployment sets itself |
 
-```bash
-fly launch --copy-config --no-deploy          # accept the name or pick one; keep the den region
-fly volumes create argus_data --size 1 --region den
+`ARGUS_CLIENT=http`, `ARGUS_API_BASE_URL` and `ARGUS_STATUS_URL` default to the live Arkhon site,
+so you don't need to set them.
 
-fly secrets set \
-  DISCORD_TOKEN='<bot token>' \
-  DISCORD_APPLICATION_ID='<application id>' \
-  DISCORD_GUILD_ID='<server id>' \
-  ARGUS_API_TOKEN='<API token from step 1>' \
-  ARGUS_WEBHOOK_SECRET='<webhook secret from step 1>'
+## 4. Deploy
 
-# Optional, as needed:
-fly secrets set ARGUS_STATUS_CHANNEL_ID='…' ARGUS_STATUS_ROLE_ID='…'
-fly secrets set ARGUS_SUPPORT_CHANNEL_ID='…' ARGUS_STAFF_ROLE_ID='…' ARGUS_TICKET_ARCHIVE_CHANNEL_ID='…'
+Run **Actions → CI and deploy → Run workflow**. Every push to the default branch also deploys. The
+workflow:
 
-fly deploy
-```
+1. checks the code: typecheck, tests, build, and a Docker image build;
+2. deploys the Worker and builds and pushes the bot image (`pnpm deploy:cloudflare`);
+3. copies the bot settings from the GitHub secrets to the Worker (`wrangler secret bulk`). Only
+   names from `.env.example` are copied, never the Cloudflare token.
 
-The bot's address is `https://<app name>.fly.dev` (`fly status` shows it). The bot registers its
-slash commands in your server when it starts.
+Within 5 minutes, the cron starts the bot. It connects to Discord, registers `/argus` in your
+server, and applies its D1 migrations. When a setting changes, the Worker restarts the bot within 5
+minutes.
 
-## 4. Point the website at the bot
+The Worker's address is `https://argus-bot.<your-subdomain>.workers.dev`, which you can find under
+Workers & Pages → `argus-bot`. You can also give it a custom domain.
 
-In Cloudflare → **Workers & Pages** → `arkhon-industries` → **Settings** → **Variables and
-Secrets**, add three **Secrets**:
+## 5. Point the website at the bot
+
+In Cloudflare, open **Workers & Pages → `arkhon-industries` → Settings → Variables and Secrets**,
+add these secrets, then deploy:
 
 | Name | Value |
 | --- | --- |
 | `DISCORD_BOT_API_TOKEN` | API token from step 1 |
-| `DISCORD_BOT_WEBHOOK_SECRET` | webhook secret from step 1 |
-| `DISCORD_BOT_WEBHOOK_URL` | `https://<app name>.fly.dev/webhooks/argus` |
+| `DISCORD_BOT_WEBHOOK_SECRET` | Webhook secret from step 1 |
+| `DISCORD_BOT_WEBHOOK_URL` | `https://argus-bot.<your-subdomain>.workers.dev/webhooks/argus` |
+| `PILOT_NETWORK_INVITE_URL` | Optional: the server's `https://discord.gg/…` invite, for the Join button |
 
-Optionally add `PILOT_NETWORK_INVITE_URL` with the server's invite link (`https://discord.gg/…`)
-to show **Join the server** on the Pilot Network page.
+## 6. Check it
 
-Click **Deploy** so the Worker picks them up.
-
-## 5. Check it
-
-- **From the bot:** put the same values in a local `.env` (copy `.env.example`), then run
-  `pnpm argus:doctor --public-url https://<app name>.fly.dev`. It checks the Discord token, the
-  server, every channel ID, the Argus API token and the public address, and says what to fix. It
-  also prints the invite link.
-- **From the website:** Admin console → **Pilot Network** → **Bot connection** → **Check
-  connection**. It checks the three Cloudflare settings and sends the bot a signed test, so it
-  catches a webhook secret that differs between the two sides.
-- **End to end:** on the same page, **Generate link code**, run `/argus link code:<code>` in the
-  server, then **Send a test DM**.
+- **Website:** go to Admin console → **Pilot Network → Bot connection → Check connection**. It
+  checks the three settings above, that the bot is running and connected to Discord, and that
+  both sides hold the same webhook secret.
+- **Bot:** put the same values in a local `.env` and run
+  `pnpm argus:doctor --public-url https://argus-bot.<your-subdomain>.workers.dev`. It checks the
+  Discord token, the server, every channel ID and the Argus API token.
+- **Logs:** `pnpm --filter @arkhon/argus-cloudflare tail`, or Workers & Pages → `argus-bot` → Logs.
+  If a required setting is missing, `/healthz` answers 503 with the list.
+- **End to end:** on the Pilot Network page, choose **Generate link code**. Run
+  `/argus link code:<code>` in Discord, then choose **Send a test DM**.
 
 ## Opening it to pilots
 
-Pilots can't link until the website lets them. In the website repo, change `DISCORD_BOT_ROLES` in
-`lib/platform/discord-bot/rollout.ts` from `["admin"]` to `["admin", "pilot"]` and deploy.
+In the website repo, change `DISCORD_BOT_ROLES` in `lib/platform/discord-bot/rollout.ts` from
+`["admin"]` to `["admin", "pilot"]`, then deploy.
 
-## Day to day
+## Without Cloudflare
 
-```bash
-fly logs                 # JSON log lines; IDs only, never tokens
-fly deploy               # after pulling changes
-fly ssh console          # a shell in the container; the database is /app/data/argus.sqlite
-```
-
-To rotate a secret, make a new one, set it on both sides (`fly secrets set …` and Cloudflare), and
-redeploy both. Alerts pause until both sides match.
+The same image runs anywhere Docker runs. Use `docker compose up -d --build argus` with a `.env`,
+and it uses the SQLite file at `ARGUS_DB_PATH` instead of D1. Give the website
+`https://<host>/webhooks/argus`, with TLS in front.

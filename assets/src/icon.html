@@ -1,0 +1,31 @@
+<!doctype html><html><head><style>html,body{margin:0;background:transparent}</style></head><body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs><radialGradient id="bgr" cx="0.5" cy="0.42" r="0.75"><stop offset="0" stop-color="#2a2933"/><stop offset="1" stop-color="#121216"/></radialGradient></defs>
+  <rect width="1024" height="1024" fill="url(#bgr)"/>
+  <circle cx="512" cy="512" r="452" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  <g transform="translate(512 500) scale(1.2)"><defs>
+  <linearGradient id="metalL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="0.55" stop-color="#d9d9e6"/><stop offset="1" stop-color="#9a9ab4"/></linearGradient>
+  <linearGradient id="metalR" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3a4a"/><stop offset="0.6" stop-color="#16161d"/><stop offset="1" stop-color="#0b0b10"/></linearGradient>
+  <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#8b85ff" stop-opacity="0.45"/><stop offset="0.6" stop-color="#6d63e8" stop-opacity="0.12"/><stop offset="1" stop-color="#6d63e8" stop-opacity="0"/></radialGradient>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
+</defs>
+<g id="mark">
+  <circle cx="0" cy="0" r="230" fill="url(#halo)"/>
+  <circle cx="0" cy="20" r="150" fill="none" stroke="#b3adff" stroke-width="14" opacity="0.85" filter="url(#glow)"/>
+  <circle cx="0" cy="20" r="150" fill="none" stroke="#e8e6ff" stroke-width="4" opacity="0.9"/>
+  <!-- lead -->
+  <g filter="url(#glow)">
+    <path d="M0 -200 L-130 40 L0 -10 Z" fill="url(#metalL)" stroke="#c9c4ff" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M0 -200 L130 40 L0 -10 Z" fill="url(#metalR)" stroke="#8f88ff" stroke-width="2" stroke-linejoin="round"/>
+    <!-- wingmen -->
+    <path d="M-150 60 L-225 205 L-150 175 Z" fill="url(#metalL)" stroke="#c9c4ff" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M-150 60 L-75 205 L-150 175 Z" fill="url(#metalR)" stroke="#8f88ff" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M150 60 L75 205 L150 175 Z" fill="url(#metalL)" stroke="#c9c4ff" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M150 60 L225 205 L150 175 Z" fill="url(#metalR)" stroke="#8f88ff" stroke-width="2" stroke-linejoin="round"/>
+  </g>
+  <!-- contrail + spark -->
+  <line x1="0" y1="10" x2="0" y2="150" stroke="#cfcaff" stroke-width="5" stroke-dasharray="18 14" stroke-linecap="round" filter="url(#glow)"/>
+  <path d="M0 165 L10 190 L35 200 L10 210 L0 235 L-10 210 L-35 200 L-10 190 Z" fill="#efeeff" filter="url(#glow)"/>
+</g></g>
+</svg></body></html>

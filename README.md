@@ -115,8 +115,9 @@ Every variable is documented in `.env.example`. Blank values use the default.
 
 ## Going live
 
-`docs/deploy.md` walks through it end to end: the Discord application, deploying to Fly.io with
-`fly.toml`, the website's Cloudflare settings, and checking each side. `pnpm argus:doctor` checks
+Production runs on **Cloudflare Containers** with its database on **D1**, the same way as the Ops bot.
+`docs/deploy.md` walks through it end to end: the Discord application, the GitHub secrets, the
+`.github/workflows/ci-deploy.yml` deploy, the website's settings, and checking each side. `pnpm argus:doctor` checks
 that every credential and ID in `.env` works and prints the invite link.
 
 ## Connecting the real Argus API

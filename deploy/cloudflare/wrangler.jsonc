@@ -1,0 +1,42 @@
+// Cloudflare deployment for the Argus bot. See docs/deploy.md.
+// `wrangler deploy` builds bots/argus/Dockerfile with the repository root as build context,
+// so Docker must be running on the machine that deploys (GitHub Actions has it).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "argus-bot",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+
+  "containers": [
+    {
+      "class_name": "ArgusBot",
+      "image": "../../bots/argus/Dockerfile",
+      "image_build_context": "../..",
+      // 1/4 vCPU, 1 GiB memory: room for discord.js and the webhook server.
+      "instance_type": "basic",
+      // Exactly one gateway connection; a second instance would answer every event twice.
+      "max_instances": 1,
+    },
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "ARGUS_BOT", "class_name": "ArgusBot" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ArgusBot"] }],
+
+  // The bot's database (D1). The bot applies its migrations (bots/argus/src/db.ts) on startup.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "argus-bot",
+      "database_id": "fcf5743e-ac05-4863-a195-747747327999",
+    },
+  ],
+
+  // Starts the bot after deploys, crashes or platform restarts (a gateway bot gets no traffic to wake it).
+  "triggers": { "crons": ["*/5 * * * *"] },
+
+  // No "vars" here: every bot setting is a Worker secret (wrangler secret put / secret bulk, or synced
+  // from GitHub by .github/workflows/ci-deploy.yml). A name cannot be both a var and a secret.
+}

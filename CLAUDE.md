@@ -23,7 +23,7 @@ pnpm argus:event <type> [--discord <id>]   # POST a signed sample event to the r
 pnpm argus:mock-status <state> [summary]   # mock mode: change what the status endpoint reports
 pnpm argus:doctor [--public-url <url>]      # check every credential and ID in .env; prints the invite link
 docker compose up -d --build argus
-fly deploy                                  # production (fly.toml); see docs/deploy.md
+pnpm deploy:cloudflare                      # production: Worker + container + D1 (CI does this); see docs/deploy.md
 ```
 
 Run `pnpm typecheck && pnpm test` before committing.
@@ -63,8 +63,11 @@ Run `pnpm typecheck && pnpm test` before committing.
   - posting a field step (`/argus step`);
   - changing duty (`/argus duty`);
   - unlinking.
-- **Storage** is SQLite via better-sqlite3 (`openDatabase(path, migrations)`). Migrations are
-  append-only and numbered from 1. Never edit a shipped migration.
+- **Storage** goes through the async `SqlDb` interface (`packages/shared/src/sql.ts`): a SQLite file
+  locally and in tests (`openSqliteDb`, `:memory:`), or Cloudflare D1 through the Worker when
+  `D1_BRIDGE_URL` is set (`createD1BridgeDb`). Use `batch()` for writes that must apply together.
+  Migrations are append-only, numbered from 1, tracked in `schema_migrations`, and must be valid
+  on D1: one statement per `;`-terminated line, no `PRAGMA`. Never edit a shipped migration.
 - **Outbound HTTP** goes through `request`/`requestJson` (per-attempt timeout, exponential
   backoff on 5xx/timeouts, no retry on 4xx). Wrap upstream data in zod schemas.
 - **Inbound webhooks** verify `sha256=` HMAC signatures with `verifySignature` from
