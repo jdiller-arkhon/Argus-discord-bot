@@ -7,8 +7,6 @@
 </defs>
 <g id="mark">
   <circle cx="0" cy="0" r="230" fill="url(#halo)"/>
-  <circle cx="0" cy="20" r="150" fill="none" stroke="#b3adff" stroke-width="14" opacity="0.85" filter="url(#glow)"/>
-  <circle cx="0" cy="20" r="150" fill="none" stroke="#e8e6ff" stroke-width="4" opacity="0.9"/>
   <!-- lead -->
   <g filter="url(#glow)">
     <path d="M0 -200 L-130 40 L0 -10 Z" fill="url(#metalL)" stroke="#c9c4ff" stroke-width="2" stroke-linejoin="round"/>
