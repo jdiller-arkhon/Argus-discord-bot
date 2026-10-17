@@ -57,7 +57,7 @@ describe('Argus on Cloudflare', () => {
   });
 
   it('reports missing required settings', () => {
-    expect(missingRequired(containerEnv({}))).toEqual([...REQUIRED]);
+    expect(missingRequired(containerEnv({}))).toEqual(REQUIRED.filter((key) => !(key in DEFAULTS)));
     const all = Object.fromEntries(REQUIRED.map((key) => [key, 'x']));
     expect(missingRequired(containerEnv(all))).toEqual([]);
   });

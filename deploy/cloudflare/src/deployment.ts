@@ -46,6 +46,8 @@ export const ENV_KEYS = [
 
 /** Production values used when the setting is not set on the Worker. */
 export const DEFAULTS: Record<string, string> = {
+  // The Argus application in the Discord developer portal. Public, not a secret.
+  DISCORD_APPLICATION_ID: '1560080288967823510',
   ARGUS_CLIENT: 'http',
   ARGUS_API_BASE_URL: 'https://arkhonindustries.com/api/bot',
   ARGUS_STATUS_URL: 'https://arkhonindustries.com/api/health',

@@ -71,10 +71,11 @@ repository secrets:
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → Create Token. Use the **Edit Cloudflare Workers** template, and add **Account → D1 → Edit** and **Account → Containers → Edit** |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages, in the right-hand column |
-| `DISCORD_TOKEN`, `DISCORD_APPLICATION_ID`, `DISCORD_GUILD_ID` | From step 2 |
+| `DISCORD_TOKEN`, `DISCORD_GUILD_ID` | From step 2 |
 | `ARGUS_API_TOKEN`, `ARGUS_WEBHOOK_SECRET` | From step 1 |
 | Any optional settings | For example `ARGUS_STATUS_CHANNEL_ID`. Every name in `.env.example` is copied, except the ones the deployment sets itself |
 
+`DISCORD_APPLICATION_ID` defaults to the Argus application (`1560080288967823510`), and
 `ARGUS_CLIENT=http`, `ARGUS_API_BASE_URL` and `ARGUS_STATUS_URL` default to the live Arkhon site,
 so you don't need to set them.
 
