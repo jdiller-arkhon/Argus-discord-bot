@@ -1,52 +1,52 @@
-import { ActivityType, type PresenceData } from "discord.js";
-import type { ServiceState } from "../argus/types.js";
+import { ActivityType, type PresenceData } from 'discord.js';
+import type { ServiceState } from '../argus/types.js';
 
 /**
  * The bot's Discord presence for a service state. Argus is the hundred-eyed watchman, so it is
- * "Watching" the network while all is well; anything else shows what members see in /argus status.
+ * 'Watching' the network while all is well; anything else shows what members see in /argus status.
  */
 export function presenceFor(state: ServiceState | null): PresenceData {
   switch (state) {
-    case "maintenance":
+    case 'maintenance':
       return {
-        status: "idle",
+        status: 'idle',
         activities: [
           {
             type: ActivityType.Custom,
-            name: "maintenance",
-            state: "🛠️ Scheduled maintenance · /argus status",
+            name: 'maintenance',
+            state: '🛠️ Scheduled maintenance · /argus status',
           },
         ],
       };
-    case "degraded":
+    case 'degraded':
       return {
-        status: "idle",
+        status: 'idle',
         activities: [
           {
             type: ActivityType.Custom,
-            name: "degraded",
-            state: "🟡 Degraded service · /argus status",
+            name: 'degraded',
+            state: '🟡 Degraded service · /argus status',
           },
         ],
       };
-    case "outage":
+    case 'outage':
       return {
-        status: "dnd",
+        status: 'dnd',
         activities: [
           {
             type: ActivityType.Custom,
-            name: "outage",
-            state: "🔴 Argus outage · /argus status",
+            name: 'outage',
+            state: '🔴 Argus outage · /argus status',
           },
         ],
       };
     default:
       return {
-        status: "online",
+        status: 'online',
         activities: [
           {
             type: ActivityType.Watching,
-            name: "the skies over the Pilot Network",
+            name: 'the skies over the Pilot Network',
           },
         ],
       };
