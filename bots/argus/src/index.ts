@@ -17,6 +17,7 @@ import { createEventDispatcher } from './events/dispatch.js';
 import { startHeldDmDelivery } from './events/held.js';
 import { createJobs } from './jobs.js';
 import { createStatusMonitor, startStatusPolling } from './status/announce.js';
+import { presenceFor } from './status/presence.js';
 import { createWebhookServer, WEBHOOK_PATH } from './webhook/server.js';
 
 async function main(): Promise<void> {
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
   let stopHeldDms: (() => void) | undefined;
   client.once(Events.ClientReady, async (ready) => {
     logger.info('Connected to Discord', { user: ready.user.tag, guilds: ready.guilds.cache.size });
+    ready.user.setPresence(presenceFor((await context.store.getStatusMemory()).announced));
     if (context.tickets) logger.info('Loaded active tickets', { count: await context.tickets.loadActiveChannels() });
     try {
       const count = await registerCommands({

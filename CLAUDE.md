@@ -93,7 +93,7 @@ pilots also use Certa, Arkhon's flight logbook, to log the flights they fly for 
 | --- | --- |
 | `/argus link code:<code>` | Redeems a one-time code from Argus (Settings → Discord). Notes a Certa link if one exists |
 | `/argus unlink` | After Confirm, removes the link here and on Argus |
-| `/argus status` | Current service health (public reply) |
+| `/argus status` | Current service health (public reply). The bot's presence mirrors it: "Watching the skies over the Pilot Network", or a 🟡/🛠️/🔴 custom status when Argus has trouble |
 | `/argus today` | Today in the user's time zone: jobs, open missions, duty, pending payouts, documents (same view as the daily digest) |
 | `/argus schedule` | The next 7 days of jobs grouped by day |
 | `/argus jobs [scope]` | Client: bookings. Pilot: assigned jobs. Active or recently finished |

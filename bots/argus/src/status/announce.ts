@@ -3,6 +3,7 @@ import type { ServiceStatus } from '../argus/types.js';
 import type { ArgusContext } from '../context.js';
 import { STATE_LABELS, statusChangeEmbed } from '../embeds.js';
 import { type StatusAnnouncement, StatusMonitor } from './monitor.js';
+import { presenceFor } from './presence.js';
 
 /** Message content for a status post; the role is pinged only for degraded/outage. */
 export function announcementContent(announcement: StatusAnnouncement, roleId: string | undefined): string | undefined {
@@ -19,6 +20,7 @@ export function createStatusMonitor(context: ArgusContext, client: Client): Stat
     pollConfirmations: env.ARGUS_STATUS_CONFIRMATIONS,
     logger: context.logger,
     async announce(announcement, status: ServiceStatus) {
+      client.user?.setPresence(presenceFor(announcement.to));
       const channelId = env.ARGUS_STATUS_CHANNEL_ID;
       if (!channelId) {
         context.logger.info('Argus status changed (no ARGUS_STATUS_CHANNEL_ID, not posted)', { ...announcement });

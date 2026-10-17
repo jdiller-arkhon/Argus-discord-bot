@@ -1,9 +1,11 @@
 import { silentLogger } from '@arkhon/shared';
+import { ActivityType } from 'discord.js';
 import { describe, expect, it } from 'vitest';
 import type { ServiceState, ServiceStatus } from '../src/argus/types.js';
 import { openArgusDatabase } from '../src/db.js';
 import { announcementContent } from '../src/status/announce.js';
 import { evaluateStatus, type StatusAnnouncement, StatusMonitor } from '../src/status/monitor.js';
+import { presenceFor } from '../src/status/presence.js';
 import { ArgusStore } from '../src/store.js';
 
 const status = (state: ServiceState): ServiceStatus => ({ state, summary: null, components: [], updatedAt: '2026-10-10T12:00:00Z' });
@@ -104,5 +106,24 @@ describe('StatusMonitor', () => {
     await m.observe(status('operational'), 'poll');
     await Promise.all([m.observe(status('outage'), 'webhook'), m.observe(status('outage'), 'poll')]);
     expect(announced).toEqual([{ from: 'operational', to: 'outage', ping: true }]);
+  });
+});
+
+describe('presenceFor', () => {
+  it('watches the network when operational or unknown', () => {
+    for (const state of ['operational', null] as const) {
+      const presence = presenceFor(state);
+      expect(presence.status).toBe('online');
+      expect(presence.activities?.[0]).toMatchObject({ type: ActivityType.Watching, name: 'the skies over the Pilot Network' });
+    }
+  });
+
+  it('shows trouble and points at /argus status', () => {
+    expect(presenceFor('maintenance').status).toBe('idle');
+    expect(presenceFor('degraded').status).toBe('idle');
+    expect(presenceFor('outage').status).toBe('dnd');
+    for (const state of ['maintenance', 'degraded', 'outage'] as const) {
+      expect(presenceFor(state).activities?.[0]).toMatchObject({ type: ActivityType.Custom, state: expect.stringContaining('/argus status') });
+    }
   });
 });
